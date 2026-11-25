@@ -1,0 +1,78 @@
+VERSION ""
+
+NS_ :
+	NS_DESC_
+	CM_
+	BA_DEF_
+	BA_
+	VAL_
+	CAT_DEF_
+	CAT_
+	FILTER
+	BA_DEF_DEF_
+	EV_DATA_
+	ENVVAR_DATA_
+	SGTYPE_
+	SGTYPE_VAL_
+	BA_DEF_SGTYPE_
+	BA_SGTYPE_
+	SIG_TYPE_REF_
+	VAL_TABLE_
+	SIG_GROUP_
+	SIG_VALTYPE_
+	SIGTYPE_VALTYPE_
+	BO_TX_BU_
+	BA_DEF_REL_
+	BA_REL_
+	BA_DEF_DEF_REL_
+	BU_SG_REL_
+	BU_EV_REL_
+	BU_BO_REL_
+	SG_MUL_VAL_
+
+BS_:
+
+BU_: MotorController BatteryBMS Dashboard
+
+BO_ 256 DriveStatus: 8 MotorController
+ SG_ MotorRPM : 0|16@1+ (0.5,0) [0|16000] "rpm" Dashboard
+ SG_ MotorTorque : 16|16@1- (0.1,0) [-500|500] "Nm" Dashboard
+ SG_ InverterTemp : 32|8@1- (1,-40) [-40|215] "degC" Dashboard
+ SG_ DriveMode : 40|3@1+ (1,0) [0|4] "" Dashboard
+ SG_ FaultActive : 43|1@1+ (1,0) [0|1] "" Dashboard
+
+BO_ 512 BatteryStatus: 8 BatteryBMS
+ SG_ PackVoltage : 0|16@1+ (0.1,0) [0|1000] "V" Dashboard,MotorController
+ SG_ PackCurrent : 16|16@1- (0.1,0) [-1000|1000] "A" Dashboard,MotorController
+ SG_ StateOfCharge : 32|8@1+ (0.5,0) [0|100] "%" Dashboard
+ SG_ CellMaxTemp : 40|8@1- (1,-40) [-40|120] "degC" Dashboard
+
+BO_ 768 DashboardControl: 4 Dashboard
+ SG_ TargetSpeed : 0|16@0+ (0.01,0) [0|300] "km/h" MotorController
+ SG_ HeadlightsOn : 16|1@1+ (1,0) [0|1] "" MotorController
+
+EV_ IO_VN1600_1_DIN0: 0 [0|1] "" 1 1 DUMMY_NODE_VECTOR0 MotorController,BatteryBMS,Dashboard;
+EV_ IO_VN1600_1_AIN: 1 [0|18] "V" 12.42 2 DUMMY_NODE_VECTOR0 MotorController,BatteryBMS,Dashboard;
+
+CM_ "Fiktive Beispiel-DBC-Datei (Public Domain / CC0) zur freien Verwendung.";
+CM_ BO_ 256 "Zyklische Statusdaten des elektrischen Antriebsstrangs";
+CM_ BO_ 512 "Hochvolt-Batteriedaten vom Batteriemanagementsystem (BMS)";
+CM_ SG_ 256 MotorRPM "Aktuelle Drehzahl der E-Maschine";
+CM_ SG_ 256 MotorTorque "Aktuelles Drehmoment (negativ = Rekuperation)";
+CM_ SG_ 512 StateOfCharge "Ladezustand der Batterie in Prozent";
+CM_ EV_ IO_VN1600_1_DIN0 "Digitaler Eingang 0 (VN1630A/VN1640A): Bremslichtschalter / Digitaler Trigger (0=Low, 1=High)";
+CM_ EV_ IO_VN1600_1_AIN "Analoger Eingang (VN1630A/VN1640A): Klemmenspannung Kl. 15 / Bordnetz in Volt";
+
+BA_DEF_ "BusType" STRING ;
+BA_DEF_ BO_ "GenMsgCycleTime" INT 0 65535;
+BA_DEF_DEF_ "BusType" "CAN";
+BA_DEF_DEF_ "GenMsgCycleTime" 100;
+
+BA_ "GenMsgCycleTime" BO_ 256 20;
+BA_ "GenMsgCycleTime" BO_ 512 100;
+BA_ "GenMsgCycleTime" BO_ 768 200;
+
+VAL_ 256 DriveMode 0 "Park" 1 "Reverse" 2 "Neutral" 3 "Drive" 4 "Sport" ;
+VAL_ 256 FaultActive 0 "OK" 1 "Error" ;
+VAL_ 768 HeadlightsOn 0 "Off" 1 "On" ;
+VAL_ IO_VN1600_1_DIN0 0 "Inactive" 1 "Active" ;

@@ -1,0 +1,140 @@
+/*@!Encoding:1252*/
+includes
+{
+}
+
+variables
+{
+  // Messgroessen und Zaehler fuer die Trace-Auswertung
+  long gCountDriveStatus = 0;
+  long gCountBatteryStatus = 0;
+  long gCountDashboardCtrl = 0;
+  long gCountDin0Changes = 0;
+  long gCountAinUpdates = 0;
+
+  double gMaxRpm = 0.0;
+  double gMaxTorque = -9999.0;
+  double gMinTorque = 9999.0;
+  double gMaxSpeed = 0.0;
+  double gMaxAinVoltage = 0.0;
+  double gMinAinVoltage = 99.0;
+
+  int gCurrentDriveMode = -1;
+}
+
+on start
+{
+  write("=================================================================");
+  write(" CAPL Trace-Auswertung gestartet (Datenbank: demo_vehicle.dbc)");
+  write("=================================================================");
+}
+
+on message DriveStatus
+{
+  double rpm;
+  double torque;
+  int mode;
+
+  gCountDriveStatus++;
+
+  rpm = this.MotorRPM.phys;
+  torque = this.MotorTorque.phys;
+  mode = this.DriveMode;
+
+  if (rpm > gMaxRpm) gMaxRpm = rpm;
+  if (torque > gMaxTorque) gMaxTorque = torque;
+  if (torque < gMinTorque) gMinTorque = torque;
+
+  // Fahrmodus-Wechsel protokollieren
+  if (mode != gCurrentDriveMode)
+  {
+    gCurrentDriveMode = mode;
+    switch (mode)
+    {
+      case 0: write("[%.3f s] Fahrmodus-Wechsel: Park (0)", timeNow() / 100000.0); break;
+      case 1: write("[%.3f s] Fahrmodus-Wechsel: Reverse (1)", timeNow() / 100000.0); break;
+      case 2: write("[%.3f s] Fahrmodus-Wechsel: Neutral (2)", timeNow() / 100000.0); break;
+      case 3: write("[%.3f s] Fahrmodus-Wechsel: Drive (3)", timeNow() / 100000.0); break;
+      case 4: write("[%.3f s] Fahrmodus-Wechsel: Sport (4)", timeNow() / 100000.0); break;
+      default: write("[%.3f s] Fahrmodus-Wechsel: Unbekannt (%d)", timeNow() / 100000.0, mode); break;
+    }
+  }
+
+  // Fehlerbit ueberwachen
+  if (this.FaultActive == 1)
+  {
+    writeLineEx(1, 3, "[%.3f s] WARNUNG: FaultActive in DriveStatus gesetzt!", timeNow() / 100000.0);
+  }
+}
+
+on message BatteryStatus
+{
+  gCountBatteryStatus++;
+
+  // Warnung bei starker Rekuperation (Ladestrom < -150 A)
+  if (this.PackCurrent.phys < -150.0)
+  {
+    write("[%.3f s] Hohe Rekuperationsleistung: %.1f A @ %.1f V (SoC: %.1f %%)",
+          timeNow() / 100000.0, this.PackCurrent.phys, this.PackVoltage.phys, this.StateOfCharge.phys);
+  }
+}
+
+on message DashboardControl
+{
+  double speed;
+
+  gCountDashboardCtrl++;
+  speed = this.TargetSpeed.phys;
+
+  if (speed > gMaxSpeed) gMaxSpeed = speed;
+}
+
+on envVar IO_VN1600_1_DIN0
+{
+  int val;
+  val = getValue(this);
+  gCountDin0Changes++;
+
+  write("[%.3f s] Digitaler Eingang IO_VN1600_1_DIN0 -> %d (%s)",
+        timeNow() / 100000.0, val, (val == 1) ? "Active / High" : "Inactive / Low");
+}
+
+on envVar IO_VN1600_1_AIN
+{
+  double volt;
+  volt = getValue(this);
+  gCountAinUpdates++;
+
+  if (volt > gMaxAinVoltage) gMaxAinVoltage = volt;
+  if (volt < gMinAinVoltage) gMinAinVoltage = volt;
+
+  // Schwellwert-Ueberwachung Bordnetzspannung
+  if (volt > 14.3)
+  {
+    write("[%.3f s] INFO: Erhoehte Bordnetzspannung (Rekuperation): %.2f V",
+          timeNow() / 100000.0, volt);
+  }
+}
+
+on stopMeasurement
+{
+  write("=================================================================");
+  write(" ZUSAMMENFASSUNG DER TRACE-AUSWERTUNG");
+  write("=================================================================");
+  write(" Empfangene Botschaften:");
+  write("   - DriveStatus (0x100):      %d", gCountDriveStatus);
+  write("   - BatteryStatus (0x200):    %d", gCountBatteryStatus);
+  write("   - DashboardControl (0x300): %d", gCountDashboardCtrl);
+  write("-----------------------------------------------------------------");
+  write(" Extremwerte Antrieb & Geschwindigkeit:");
+  write("   - Max. Motordrehzahl:       %.1f rpm", gMaxRpm);
+  write("   - Max. Antriebsmoment:      %.1f Nm", gMaxTorque);
+  write("   - Max. Rekuperationsmoment: %.1f Nm", gMinTorque);
+  write("   - Max. Sollgeschwindigkeit: %.2f km/h", gMaxSpeed);
+  write("-----------------------------------------------------------------");
+  write(" Hardware I/O (Environment Variables):");
+  write("   - DIN0 Flankenwechsel:      %d", gCountDin0Changes);
+  write("   - AIN Messwerte:            %d (Min: %.2f V | Max: %.2f V)",
+        gCountAinUpdates, gMinAinVoltage, gMaxAinVoltage);
+  write("=================================================================");
+}

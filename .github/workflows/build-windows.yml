@@ -1,0 +1,49 @@
+# Baut CANtrix.exe für Windows mit PyInstaller (wie "Batch/03 - make exe_CANtrix_Windows.bat").
+# Start: von Hand (GitHub > Actions > "Build Windows exe" > Run workflow), über
+# "Batch/05 - make_all_CANtrix.command" oder beim Setzen eines Tags "v*".
+# Ergebnis: Artefakt "CANtrix-windows" mit CANtrix.exe (7 Tage verfügbar).
+# Nicht bei jedem Push, weil private Repositories nur ein Kontingent an Minuten haben (Windows zählt doppelt).
+name: Build Windows exe
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build and interface dependencies
+        run: python -m pip install --upgrade pyinstaller python-can lauterbach-trace32-rcl pyserial
+
+      - name: Build CANtrix.exe
+        shell: bash
+        run: |
+          python -m PyInstaller --noconfirm --clean --onefile --windowed \
+            --name CANtrix \
+            --icon Bilder/CANtrix.ico \
+            --paths Sourcen \
+            --add-data "README.md;." \
+            --add-data "README_en.md;." \
+            --add-data "Screenshots;Screenshots" \
+            --add-data "Bilder/CANtrix-Startbildschirm.png;Bilder" \
+            --add-data "Bilder/CANtrix-Icon.png;Bilder" \
+            --add-data "Bilder/CANtrix.ico;Bilder" \
+            --add-data "Bilder/CANtrix-Hintergrund.png;Bilder" \
+            --collect-all lauterbach.trace32.rcl \
+            --collect-all can \
+            Sourcen/CANtrix.py
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CANtrix-windows
+          path: dist/CANtrix.exe
+          retention-days: 7
+          if-no-files-found: error

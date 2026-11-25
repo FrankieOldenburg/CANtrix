@@ -1,0 +1,1153 @@
+"""Logic Analyzer (USBtingo): Logikpegel der CAN-RX-Leitung aufzeichnen, anzeigen und als CAN dekodieren.
+
+Das Fenster zeigt wie PulseView drei Zeilen: den Pegelverlauf, die einzelnen Bits (Stuff-Bits blau) und die
+CAN-Felder (ID, Steuerbits, Datenbytes, CRC, EOF …). Aufzeichnungen (Sigrok-Dateien `.sr`, auch in PulseView
+lesbar) kommen vom USBtingo (`recording_start`/`recording_stop` des python-can-Plugins `python-can-usbtingo`)
+oder aus einer Datei. Lesen und Dekodieren brauchen nur die Standardbibliothek (Python 3.6).
+"""
+import bisect
+import contextlib
+import math
+import os
+import queue
+import re
+import shutil
+import tempfile
+import threading
+import time
+import zipfile
+from array import array
+
+try:
+    import tkinter as tk
+    from tkinter import filedialog, messagebox, ttk
+    from tkinter import font as tkfont
+except ImportError:  # pragma: no cover
+    tk = None
+
+from CAN_Common import C, Theme, draw_open_icon, draw_save_icon, icon_hue, icon_line, initial_geometry, \
+    window_geometry
+from CAN_Language import language, set_text, tr
+
+BITRATES = [10000, 20000, 50000, 100000, 125000, 250000, 500000, 800000, 1000000]
+DATA_BITRATES = [1000000, 2000000, 4000000, 5000000, 8000000]
+SAMPLE_RATES = [1000000, 2000000, 5000000, 10000000, 20000000, 40000000]  # of the USBtingo: 120 MHz / 3 … 255
+SAMPLE_POINT = 0.75
+DLC_LENGTHS = (0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 20, 24, 32, 48, 64)
+MIN_SAMPLES_PER_BIT = 4
+
+_CWD_LOCK = threading.Lock()
+
+
+# ---------------------------------------------------------------- Sigrok files
+
+def read_sigrok(path):
+    """Reads a Sigrok session file (`.sr`, a zip): returns (sample rate in Hz, levels of the channel 'CAN' (or the
+    first one) as bytes with 0/1 per sample)."""
+    with zipfile.ZipFile(path) as archive:
+        names = archive.namelist()
+        if 'metadata' not in names:
+            raise ValueError(tr('Keine Sigrok-Datei (Eintrag "metadata" fehlt).'))
+        meta = archive.read('metadata').decode('utf-8', 'replace')
+        match = re.search(r'^samplerate=\s*([\d.]+)\s*([kMG]?)Hz', meta, re.M | re.I)
+        if not match:
+            raise ValueError(tr('Die Sigrok-Datei enthält keine Abtastrate.'))
+        rate = float(match.group(1)) * {'': 1, 'k': 1e3, 'm': 1e6, 'g': 1e9}[match.group(2).lower()]
+        unit = int((re.search(r'^unitsize=\s*(\d+)', meta, re.M) or [0, 1])[1]) or 1
+        capture = (re.search(r'^capturefile=\s*(\S+)', meta, re.M) or [0, 'logic-1'])[1]
+        probe = 0
+        for number, name in re.findall(r'^probe(\d+)=\s*(.*?)\s*$', meta, re.M):
+            if name.upper() == 'CAN':
+                probe = int(number) - 1
+                break
+        chunks = []
+        for name in names:
+            found = re.fullmatch(re.escape(capture) + r'-(\d+)', name)
+            if found:
+                chunks.append((int(found.group(1)), name))
+        if not chunks:
+            raise ValueError(tr('Die Sigrok-Datei enthält keine Messdaten.'))
+        data = b''.join(archive.read(name) for _, name in sorted(chunks))
+    if unit > 1:
+        data = data[probe // 8::unit]
+    shift = probe % 8
+    table = bytes((value >> shift) & 1 for value in range(256))
+    return int(round(rate)), data.translate(table)
+
+
+def find_edges(levels):
+    """Indices of the samples at which the level changes (array of unsigned)."""
+    edges = array('I')
+    if not levels:
+        return edges
+    level, pos, find = levels[0], 0, levels.find
+    while True:
+        pos = find(1 - level, pos)
+        if pos < 0:
+            return edges
+        edges.append(pos)
+        level = 1 - level
+
+
+# ---------------------------------------------------------------- CAN decoder
+
+class EndOfData(Exception):
+    pass
+
+
+class FrameError(Exception):
+    pass
+
+
+class Decoder(object):
+    """Decodes classical CAN and CAN FD (bit rate switch) from the sampled levels of the CAN RX line.
+
+    Result: starts/ends (sample index of each bit), flags (bit 0 value, bit 1 stuff bit, bit 2 data phase),
+    fields (start, end, label, detail, kind) and frames (start, end, text)."""
+
+    def __init__(self, levels, rate, nominal, data_rate=None, sample_point=SAMPLE_POINT, cancel=None,
+                 progress=None):
+        self.d = levels
+        self.n = len(levels)
+        self.tb = rate / float(nominal)
+        self.tbd = rate / float(data_rate or nominal)
+        self.sp = sample_point
+        self.cancel = cancel
+        self.progress = progress
+        self.starts, self.ends, self.flags = array('I'), array('I'), bytearray()
+        self.fields, self.frames = [], []
+        self._fields = []  # (first bit, last bit, label, detail, kind) while decoding
+        self.start, self.prev, self.prev_pt, self.fast, self.last = 0.0, 1, -1, False, 1
+        self.bit_start = 0.0
+        self.run_val, self.run_len = 1, 0
+
+    # --- bits
+    def raw(self):
+        """Next bit (stuff bits included), synchronised to the edge before it."""
+        tb = self.tbd if self.fast else self.tb
+        d, s = self.d, self.start
+        pt = int(s + tb * self.sp)
+        if pt >= self.n:
+            raise EndOfData()
+        v = d[pt]
+        if v != self.prev:
+            j = d.find(v, self.prev_pt + 1, pt + 1)
+            if j >= 0:
+                s = float(j)
+                pt = int(s + tb * self.sp)
+                if pt >= self.n:
+                    raise EndOfData()
+                v = d[pt]
+        self.prev, self.prev_pt, self.last = v, pt, v
+        self.bit_start = s
+        self.start = s + tb
+        self.starts.append(int(s))
+        self.ends.append(int(s + tb))
+        self.flags.append(v | (4 if self.fast else 0))
+        return v
+
+    def bit(self):
+        """Next data bit with dynamic destuffing; returns (value, index)."""
+        while True:
+            v = self.raw()
+            index = len(self.flags) - 1
+            if self.run_len == 5:  # a stuff bit
+                self.flags[index] |= 2
+                if v == self.run_val:
+                    raise FrameError(tr('Stuff-Fehler'))
+                self.run_val, self.run_len = v, 1
+                continue
+            if v == self.run_val:
+                self.run_len += 1
+            else:
+                self.run_val, self.run_len = v, 1
+            return v, index
+
+    def trailing_stuff(self):
+        """A stuff bit after the last bit of a stuffed region (when the last five bits were equal)."""
+        if self.run_len == 5:
+            v = self.raw()
+            self.flags[-1] |= 2
+            if v == self.run_val:
+                raise FrameError(tr('Stuff-Fehler'))
+
+    def fixed_stuff(self):
+        before = self.last
+        v = self.raw()
+        self.flags[-1] |= 2
+        if v == before:
+            raise FrameError(tr('Stuff-Fehler (festes Stuff-Bit)'))
+
+    def take(self, count):
+        value, first, index = 0, None, -1
+        for _ in range(count):
+            v, index = self.bit()
+            if first is None:
+                first = index
+            value = (value << 1) | v
+        return value, first, index
+
+    def field(self, first, last, label, detail, kind):
+        self._fields.append((first, last, label, detail, kind))
+
+    # --- frame
+    def frame(self, sof):
+        """Decodes the frame whose start bit begins at sample sof; returns the sample after its end."""
+        self.start, self.prev, self.prev_pt, self.fast, self.last = float(sof), 1, sof - 1, False, 1
+        first_bit = len(self.flags)
+        self.raw()
+        self.run_val, self.run_len = 0, 1
+        self.field(first_bit, first_bit, 'SOF', tr('Start of Frame'), 'ctrl')
+        ident, a, b = self.take(11)
+        self.field(a, b, 'ID: %d (0x%X)' % (ident, ident), tr('Identifier: %d (0x%X)') % (ident, ident), 'id')
+        x1, i1, _ = self.take(1)  # RTR (classic) or SRR (extended); in CAN FD RRS
+        ide, i2, _ = self.take(1)
+        brs = low = 0
+        if not ide:  # base format
+            fd, i3, _ = self.take(1)  # FDF, in classical CAN the reserved bit r0
+            self.field(i1, i1, 'RRS' if fd else 'RTR', ('RRS: %d' if fd else 'RTR: %d') % x1, 'flag')
+            self.field(i2, i2, 'IDE', tr('IDE: 0 (Standard-ID)'), 'flag')
+            self.field(i3, i3, 'FDF' if fd else 'r0', 'FDF: 1 (CAN FD)' if fd else 'r0: 0', 'flag')
+            rtr = x1
+            identifier = ident
+        else:  # extended format
+            self.field(i1, i1, 'SRR', 'SRR: %d' % x1, 'flag')
+            self.field(i2, i2, 'IDE', tr('IDE: 1 (Extended-ID)'), 'flag')
+            low, a, b = self.take(18)
+            identifier = (ident << 18) | low
+            self.field(a, b, 'Full ID: %d (0x%X)' % (identifier, identifier),
+                       tr('Full ID (29 Bit): %d (0x%X)') % (identifier, identifier), 'fullid')
+            rtr, i3, _ = self.take(1)  # RTR, in CAN FD r1
+            fd, i4, _ = self.take(1)  # FDF, in classical CAN r1
+            self.field(i3, i3, 'r1' if fd else 'RTR', ('r1: %d' if fd else 'RTR: %d') % rtr, 'flag')
+            self.field(i4, i4, 'FDF' if fd else 'r1', 'FDF: 1 (CAN FD)' if fd else 'r1: 0', 'flag')
+            if not fd:
+                v, a, b = self.take(1)
+                self.field(a, b, 'r0', 'r0: %d' % v, 'flag')
+        if fd:
+            v, a, b = self.take(1)
+            self.field(a, b, 'r0', 'r0: %d' % v, 'flag')
+            brs, a, b = self.take(1)
+            self.field(a, b, 'BRS', tr('BRS: 1 (Datenphase schneller)') if brs else 'BRS: 0', 'flag')
+            if brs:  # the data phase begins at the sample point of the BRS bit
+                self.fast = True
+                self.start = self.bit_start + self.tb * self.sp + self.tbd * (1 - self.sp)
+                self.ends[-1] = int(self.start)
+            esi, a, b = self.take(1)
+            self.field(a, b, 'ESI', 'ESI: %d' % esi, 'flag')
+        dlc, a, b = self.take(4)
+        length = DLC_LENGTHS[dlc] if fd else min(dlc, 8)
+        if not fd and rtr:
+            length = 0
+        self.field(a, b, 'DLC: %d' % dlc, tr('DLC: %d (%d Datenbytes)') % (dlc, length), 'dlc')
+        data = []
+        for number in range(length):
+            value, a, b = self.take(8)
+            data.append(value)
+            self.field(a, b, 'DB', tr('Datenbyte %d: 0x%02X') % (number, value), 'data')
+        if fd:  # stuff count and CRC with fixed stuff bits (one before every group of four bits)
+            self.trailing_stuff()
+            crc_bits = 17 if length <= 16 else 21
+            values, indices = [], []
+            for position in range(4 + crc_bits):
+                if position % 4 == 0:
+                    self.fixed_stuff()
+                values.append(self.raw())
+                indices.append(len(self.flags) - 1)
+            count = (values[0] << 2) | (values[1] << 1) | values[2]
+            count ^= (count >> 1) ^ (count >> 2)  # Gray code
+            self.field(indices[0], indices[3], 'SC: %d' % count,
+                       tr('Stuff-Zähler: %d (Parität %d)') % (count, values[3]), 'stuffcount')
+            crc = 0
+            for v in values[4:]:
+                crc = (crc << 1) | v
+            self.field(indices[4], indices[-1], 'CRC-%d' % crc_bits, tr('CRC-%d: 0x%X') % (crc_bits, crc), 'crc')
+        else:
+            crc, a, b = self.take(15)
+            self.field(a, b, 'CRC-15', tr('CRC-15: 0x%X') % crc, 'crc')
+            self.trailing_stuff()
+        v = self.raw()
+        index = len(self.flags) - 1
+        self.field(index, index, 'CRC-D', tr('CRC-Delimiter'), 'ctrl')
+        if v != 1:
+            raise FrameError(tr('Form-Fehler: CRC-Delimiter'))
+        if self.fast:  # back to the nominal bit rate
+            self.fast = False
+            self.start = self.bit_start + self.tbd * self.sp + self.tb * (1 - self.sp)
+            self.ends[-1] = int(self.start)
+        v = self.raw()
+        index = len(self.flags) - 1
+        self.field(index, index, 'ACK', tr('ACK-Slot: dominant (bestätigt)') if v == 0
+                   else tr('ACK-Slot: rezessiv (nicht bestätigt)'), 'ctrl')
+        v = self.raw()
+        index = len(self.flags) - 1
+        self.field(index, index, 'ACK-D', tr('ACK-Delimiter'), 'ctrl')
+        if v != 1:
+            raise FrameError(tr('Form-Fehler: ACK-Delimiter'))
+        first = len(self.flags)
+        for _ in range(7):
+            if self.raw() != 1:
+                raise FrameError(tr('Form-Fehler: EOF'))
+        self.field(first, len(self.flags) - 1, 'EOF', tr('End of Frame'), 'eof')
+        text = '0x%X%s%s: %s' % (identifier, ' FD' if fd else '', ' BRS' if brs else '',
+                                 ' '.join('%02X' % v for v in data))
+        self.frames.append((int(self.starts[first_bit]), int(self.ends[-1]), text))
+        return int(self.start)
+
+    def flush_fields(self):
+        for first, last, label, detail, kind in self._fields:
+            first = max(0, min(first, len(self.starts) - 1))
+            last = max(first, min(last, len(self.starts) - 1))
+            self.fields.append((int(self.starts[first]), int(self.ends[last]), label, detail, kind))
+        self._fields = []
+
+    # --- search
+    def resync(self, pos):
+        """Position after a stretch of at least 7 recessive bit times (idle bus) at or after pos."""
+        d, need = self.d, int(7 * self.tb)
+        while pos < self.n:
+            zero = d.find(0, pos)
+            if zero < 0:
+                return self.n
+            one = d.find(1, zero)
+            if one < 0:
+                return self.n
+            nxt = d.find(0, one)
+            if (self.n if nxt < 0 else nxt) - one >= need:
+                return one + need
+            pos = one
+        return self.n
+
+    def run(self):
+        d, pos = self.d, 0
+        if self.n < 2:
+            return
+        if d[0] == 0:
+            pos = self.resync(0)
+        count = 0
+        while pos < self.n:
+            if self.cancel is not None and self.cancel():
+                return
+            sof = d.find(0, pos)
+            if sof < 0:
+                break
+            try:
+                pos = self.frame(sof)
+            except EndOfData:
+                break
+            except FrameError as error:
+                index = len(self.flags) - 1
+                self.field(index, index, tr('Fehler'), str(error), 'error')
+                pos = self.resync(int(self.start))
+            self.flush_fields_safe()
+            count += 1
+            if self.progress is not None and count % 50 == 0:
+                self.progress(pos / float(self.n))
+        self.flush_fields_safe()
+
+    def flush_fields_safe(self):
+        if self._fields:
+            self.flush_fields()
+
+
+def decode(levels, rate, nominal, data_rate=None, cancel=None, progress=None):
+    """Decodes the levels; returns a dict (starts, ends, flags, fields, frames, field_starts) or raises ValueError."""
+    if rate / float(nominal) < MIN_SAMPLES_PER_BIT or (data_rate and rate / float(data_rate) < MIN_SAMPLES_PER_BIT):
+        raise ValueError(tr('Die Abtastrate (%s MHz) ist für diese Bitrate zu niedrig (mindestens %d Abtastwerte '
+                            'je Bit).') % ('%g' % (rate / 1e6), MIN_SAMPLES_PER_BIT))
+    decoder = Decoder(levels, rate, nominal, data_rate, cancel=cancel, progress=progress)
+    decoder.run()
+    return {'starts': decoder.starts, 'ends': decoder.ends, 'flags': decoder.flags, 'fields': decoder.fields,
+            'frames': decoder.frames, 'field_starts': [field[0] for field in decoder.fields]}
+
+
+# ---------------------------------------------------------------- time axis
+
+def nice_step(minimum):
+    """Smallest 1, 2 or 5 times a power of ten that is at least minimum."""
+    if minimum <= 0:
+        return 1.0
+    exponent = math.floor(math.log10(minimum))
+    for factor in (1, 2, 5, 10):
+        step = factor * 10 ** exponent
+        if step >= minimum * 0.999:
+            return step
+
+
+def time_unit(step):
+    """(factor, name) of the unit in which ticks of this step are shown."""
+    if step < 1e-6:
+        return 1e-9, 'ns'
+    if step < 1e-3:
+        return 1e-6, 'µs'
+    if step < 1:
+        return 1e-3, 'ms'
+    return 1.0, 's'
+
+
+def number_text(value, decimals):
+    text = '%.*f' % (decimals, value)
+    return text.replace('.', ',') if language() == 'de' else text
+
+
+def time_text(seconds):
+    """Time with a sensible unit, e.g. '340,50 µs'."""
+    factor, unit = time_unit(abs(seconds) or 1e-3)
+    return '%s %s' % (number_text(seconds / factor, 2), unit)
+
+
+# ---------------------------------------------------------------- icons
+
+def draw_record_icon(canvas, color):
+    """Red dot: start recording."""
+    canvas.create_oval(9, 9, 21, 21, fill=C.DANGER, outline=C.DANGER, tags=('icon',))
+
+
+def draw_stop_square_icon(canvas, color):
+    canvas.create_rectangle(9, 9, 21, 21, fill=C.DANGER, outline=C.DANGER, width=1.5, tags=('icon',))
+
+
+def draw_zoom_icon(plus):
+    def draw(canvas, color):
+        blue = icon_hue(5)
+        canvas.create_oval(8, 8, 19, 19, outline=blue, width=1.5, tags=('icon',))
+        canvas.create_line(18, 18, 23, 23, **icon_line(blue, 2))
+        canvas.create_line(11, 13.5, 16, 13.5, **icon_line(blue))
+        if plus:
+            canvas.create_line(13.5, 11, 13.5, 16, **icon_line(blue))
+    return draw
+
+
+def draw_fit_icon(canvas, color):
+    line = icon_line(icon_hue(5), 1.5)
+    canvas.create_line(8, 9, 8, 21, **line)
+    canvas.create_line(22, 9, 22, 21, **line)
+    canvas.create_line(11, 15, 19, 15, **line)
+    canvas.create_line(11, 15, 14, 12, 11, 15, 14, 18, **line)
+    canvas.create_line(19, 15, 16, 12, 19, 15, 16, 18, **line)
+
+
+# ---------------------------------------------------------------- window
+
+LABEL_WIDTH = 140
+RULER_HEIGHT = 30
+WAVE_HEIGHT = 64
+ROW_HEIGHT = 34
+KIND_COLORS = {'id': 6, 'fullid': 4, 'data': 2, 'crc': 1, 'eof': 3, 'flag': 5, 'dlc': 7, 'ctrl': 7,
+               'stuffcount': 5}
+DARK_TEXT = '#111827'
+
+
+@contextlib.contextmanager
+def working_directory(path):
+    """The plugin writes its temporary sample file into the current directory; this keeps it out of the project."""
+    with _CWD_LOCK:
+        old = os.getcwd()
+        os.chdir(path)
+        try:
+            yield
+        finally:
+            os.chdir(old)
+
+
+if tk is not None:
+
+    class LogicApp(object):
+        def __init__(self, root, settings=None, connection=None):
+            """root: Tk, Toplevel or DockFrame. settings: window settings. connection: settings of the recorder
+            (bit rates). get_bus (set by the analyzer) returns the open USBtingo of a running recording or None."""
+            self.root = root
+            self.settings = dict(settings or {})
+            connection = connection or {}
+            self.get_bus = None
+            self.capture = None  # dict: path, rate, levels, edges, name
+            self.decoded = None
+            self.view_start, self.spp = 0.0, 1.0
+            self.recording = None  # dict while recording: bus, owned, folder, path, started
+            self.busy = False
+            self.temp_folder = None
+            self.queue = queue.Queue()
+            self.job = 0
+            self.poll_job = None
+            self.decode_job = None
+            self.timer_job = None
+            self.hover = None
+            self._fresh = True
+            self.drag = None
+            self.status = tk.StringVar()
+            self.theme = Theme(root)
+            saved = lambda key, default: self.settings.get(key, default)
+            self.bitrate = tk.StringVar(value=str(saved('bitrate', connection.get('bitrate', 500000))))
+            self.fd = tk.BooleanVar(value=bool(saved('fd', connection.get('fd', False))))
+            self.data_bitrate = tk.StringVar(value=str(saved('data_bitrate', connection.get('data_bitrate', 2000000))))
+            self.sample_rate = tk.StringVar(value=str(saved('sample_rate', 'Auto')))
+            self.connection = dict(connection)
+            self._build_layout()
+            root.title('CAN Logic Analyzer')
+            root.minsize(760, 340)
+            root.geometry(initial_geometry(root, self.settings, '1100x430'))
+            set_text(self.status, 'Bereit')
+            self._update_buttons()
+
+        # ------------------------------------------------------------ layout
+
+        def _build_layout(self):
+            theme = self.theme
+            theme.header(self.root, 'CAN Logic Analyzer', tr('USBtingo: Logikpegel der CAN-RX-Leitung'))
+            theme.footer(self.root, self.status)
+            body = tk.Frame(self.root, background=C.APP_BG)
+            body.pack(fill=tk.BOTH, expand=True, padx=12, pady=12)
+            card, bar = theme.pane(body, tr('Aufzeichnung'))
+            card.pack(fill=tk.BOTH, expand=True)
+            buttons = (
+                ('open', draw_open_icon, self.open_file, tr('Aufzeichnung öffnen… (Sigrok-Datei .sr)')),
+                ('save', draw_save_icon, self.save_file, tr('Aufzeichnung speichern unter…')),
+                ('record', draw_record_icon, self.start_recording, tr('Aufzeichnung starten (USBtingo)')),
+                ('stop', draw_stop_square_icon, self.stop_recording, tr('Aufzeichnung beenden')),
+                ('zoom_in', draw_zoom_icon(True), lambda: self.zoom(0.5), tr('Hineinzoomen')),
+                ('zoom_out', draw_zoom_icon(False), lambda: self.zoom(2.0), tr('Herauszoomen')),
+                ('fit', draw_fit_icon, self.fit, tr('Alles anzeigen')),
+            )
+            self.buttons = {}
+            for key, draw, command, tip in buttons:
+                button = theme.icon_button(bar, draw, command, tip)
+                button.pack(side=tk.LEFT, padx=(8 if key in ('open', 'zoom_in') else 2, 2), pady=3)
+                self.buttons[key] = button
+            settings = ttk.Frame(card, padding=(12, 8, 12, 4))
+            settings.pack(side=tk.TOP, fill=tk.X)
+            ttk.Label(settings, text=tr('Bitrate:')).pack(side=tk.LEFT)
+            bitrate = ttk.Combobox(settings, textvariable=self.bitrate, values=BITRATES, width=9)
+            bitrate.pack(side=tk.LEFT, padx=(4, 12))
+            ttk.Checkbutton(settings, text='CAN FD', variable=self.fd, command=self._settings_changed).pack(
+                side=tk.LEFT, padx=(0, 4))
+            ttk.Label(settings, text=tr('Datenrate:')).pack(side=tk.LEFT, padx=(8, 0))
+            data = self.data_box = ttk.Combobox(settings, textvariable=self.data_bitrate, values=DATA_BITRATES,
+                                                width=9)
+            data.pack(side=tk.LEFT, padx=(4, 12))
+            ttk.Label(settings, text=tr('Abtastrate (Aufzeichnung):')).pack(side=tk.LEFT, padx=(8, 0))
+            rate = ttk.Combobox(settings, textvariable=self.sample_rate, values=['Auto'] + SAMPLE_RATES, width=10)
+            rate.pack(side=tk.LEFT, padx=(4, 0))
+            for box in (bitrate, data, rate):
+                box.bind('<<ComboboxSelected>>', lambda event: self._settings_changed())
+                box.bind('<Return>', lambda event: self._settings_changed())
+                box.bind('<FocusOut>', lambda event: self._settings_changed())
+            self._update_data_box()
+            area = tk.Frame(card, background=C.SURFACE)
+            area.pack(fill=tk.BOTH, expand=True, padx=1, pady=(4, 1))
+            self.scroll = ttk.Scrollbar(area, orient=tk.HORIZONTAL, command=self._on_scrollbar)
+            self.scroll.pack(side=tk.BOTTOM, fill=tk.X)
+            self.canvas = tk.Canvas(area, background=C.SURFACE, highlightthickness=0, height=240)
+            self.canvas.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+            self.font = tkfont.Font(font=theme.font_axis)
+            canvas = self.canvas
+            canvas.bind('<Configure>', lambda event: self.render())
+            canvas.bind('<MouseWheel>', self._on_wheel)
+            canvas.bind('<Shift-MouseWheel>', self._on_pan_wheel)
+            canvas.bind('<Button-4>', lambda event: self.zoom(0.8, event.x))
+            canvas.bind('<Button-5>', lambda event: self.zoom(1.25, event.x))
+            canvas.bind('<ButtonPress-1>', self._on_press)
+            canvas.bind('<B1-Motion>', self._on_drag)
+            canvas.bind('<ButtonRelease-1>', lambda event: setattr(self, 'drag', None))
+            canvas.bind('<Double-Button-1>', self._on_double)
+            canvas.bind('<Motion>', self._on_motion)
+            canvas.bind('<Leave>', lambda event: self._show_hover(None))
+
+        def _settings_changed(self):
+            self._update_data_box()
+            if self.capture is not None:
+                if self.decode_job is not None:
+                    self.root.after_cancel(self.decode_job)
+                self.decode_job = self.root.after(250, self._start_decode)
+
+        def _update_data_box(self):
+            self.data_box.configure(state='normal' if self.fd.get() else 'disabled')
+
+        def _update_buttons(self):
+            recording = self.recording is not None
+            idle = not recording and not self.busy
+            for key, enabled in (('open', idle), ('save', idle and self.capture is not None),
+                                 ('record', idle), ('stop', recording and not self.busy),
+                                 ('zoom_in', self.capture is not None), ('zoom_out', self.capture is not None),
+                                 ('fit', self.capture is not None)):
+                self.buttons[key].state(['!disabled' if enabled else 'disabled'])
+
+        # ------------------------------------------------------------ rates
+
+        def rates(self):
+            """(nominal, data) bit rate from the fields; ValueError for invalid input."""
+            nominal = int(self.bitrate.get())
+            data = int(self.data_bitrate.get()) if self.fd.get() else None
+            if nominal <= 0 or (data is not None and data <= 0):
+                raise ValueError
+            return nominal, data
+
+        def sampling_rate(self):
+            """Rate for recording: None = automatic (10 x bit rate)."""
+            text = self.sample_rate.get().strip()
+            return None if text.lower() in ('', 'auto') else int(text)
+
+        def set_connection(self, connection):
+            """The recorder settings changed: take over bit rates."""
+            self.connection = dict(connection)
+            self.bitrate.set(str(connection.get('bitrate', self.bitrate.get())))
+            self.fd.set(bool(connection.get('fd', False)))
+            self.data_bitrate.set(str(connection.get('data_bitrate', self.data_bitrate.get())))
+            self._settings_changed()
+
+        # ------------------------------------------------------------ files and decoding
+
+        def open_file(self):
+            path = filedialog.askopenfilename(parent=self.root, title=tr('Aufzeichnung öffnen'),
+                                              filetypes=[(tr('Sigrok-Aufzeichnung'), '*.sr'),
+                                                         (tr('Alle Dateien'), '*')])
+            if path:
+                self.load(path)
+
+        def save_file(self):
+            if self.capture is None:
+                return
+            name = os.path.basename(self.capture['path'])
+            path = filedialog.asksaveasfilename(parent=self.root, title=tr('Aufzeichnung speichern unter…'),
+                                                initialfile=name, defaultextension='.sr',
+                                                filetypes=[(tr('Sigrok-Aufzeichnung'), '*.sr')])
+            if not path:
+                return
+            try:
+                shutil.copyfile(self.capture['path'], path)
+            except OSError as error:
+                messagebox.showerror('CAN Logic Analyzer', str(error), parent=self.root)
+                return
+            set_text(self.status, 'Gespeichert: %s', path)
+
+        def load(self, path):
+            """Read a Sigrok file and decode it (in the background)."""
+            self.job += 1
+            job = self.job
+            self.busy = True
+            self._update_buttons()
+            set_text(self.status, 'Wird geladen: %s', path)
+
+            def work():
+                try:
+                    rate, levels = read_sigrok(path)
+                    capture = {'path': path, 'rate': rate, 'levels': levels, 'edges': find_edges(levels),
+                               'name': os.path.basename(path)}
+                    self.queue.put(('capture', job, capture))
+                except Exception as error:
+                    self.queue.put(('error', job, str(error)))
+            threading.Thread(target=work, daemon=True).start()
+            self._poll()
+
+        def _start_decode(self):
+            self.decode_job = None
+            if self.capture is None:
+                return
+            try:
+                nominal, data = self.rates()
+            except ValueError:
+                set_text(self.status, 'Bitrate und Datenrate müssen positive ganze Zahlen sein.')
+                return
+            self.job += 1
+            job = self.job
+            capture = self.capture
+            self.busy = True
+            self._update_buttons()
+            set_text(self.status, 'Dekodiere …')
+
+            def work():
+                try:
+                    result = decode(capture['levels'], capture['rate'], nominal, data,
+                                    cancel=lambda: job != self.job,
+                                    progress=lambda share: self.queue.put(('progress', job, share)))
+                    self.queue.put(('decoded', job, result))
+                except Exception as error:
+                    self.queue.put(('decode_error', job, str(error)))
+            threading.Thread(target=work, daemon=True).start()
+            self._poll()
+
+        def _poll(self):
+            if self.poll_job is not None:
+                return
+            self.poll_job = self.root.after(60, self._poll_now)
+
+        def _poll_now(self):
+            self.poll_job = None
+            pending = True
+            while True:
+                try:
+                    kind, job, payload = self.queue.get_nowait()
+                except queue.Empty:
+                    break
+                if kind == 'record_started':
+                    self._recording_started(payload)
+                    continue
+                if kind == 'record_error':
+                    self.busy = False
+                    self._update_buttons()
+                    set_text(self.status, 'Aufzeichnung fehlgeschlagen: %s', payload)
+                    messagebox.showerror('CAN Logic Analyzer', payload, parent=self.root)
+                    continue
+                if kind == 'record_stopped':
+                    self.busy = False
+                    self.recording = None
+                    self._update_buttons()
+                    if payload.get('error'):
+                        set_text(self.status, 'Aufzeichnung fehlgeschlagen: %s', payload['error'])
+                        messagebox.showerror('CAN Logic Analyzer', payload['error'], parent=self.root)
+                    else:
+                        self._forget_temp()
+                        self.temp_folder = payload['folder']
+                        self.load(payload['path'])
+                    continue
+                if job != self.job:
+                    continue
+                if kind == 'progress':
+                    set_text(self.status, 'Dekodiere … %s %%', lambda share=payload: '%d' % round(share * 100))
+                elif kind == 'capture':
+                    self.capture = payload
+                    self._fresh = True
+                    self.decoded = None
+                    self.fit()
+                    self.busy = False
+                    self._start_decode()
+                elif kind == 'decoded':
+                    self.decoded = payload
+                    self.busy = False
+                    self._update_buttons()
+                    self._decoded_status()
+                    self._fit_first_frame()
+                    self.render()
+                elif kind == 'decode_error':
+                    self.decoded = None
+                    self.busy = False
+                    self._update_buttons()
+                    set_text(self.status, '%s', payload)
+                    self.render()
+                elif kind == 'error':
+                    self.busy = False
+                    self._update_buttons()
+                    set_text(self.status, '%s', payload)
+                    messagebox.showerror('CAN Logic Analyzer', payload, parent=self.root)
+            if self.busy or self.recording is not None:
+                self.poll_job = self.root.after(60, self._poll_now)
+
+        def _decoded_status(self):
+            capture = self.capture
+            seconds = len(capture['levels']) / float(capture['rate'])
+            set_text(self.status, '%s: %s Frames, %s Abtastwerte, %s MHz, %s',
+                     capture['name'], '%d' % len(self.decoded['frames']), '{:,}'.format(len(capture['levels'])),
+                     '%g' % (capture['rate'] / 1e6), time_text(seconds))
+
+        def _fit_first_frame(self):
+            """After loading: show the first frame (otherwise everything stays)."""
+            if getattr(self, '_fresh', True) and self.decoded and self.decoded['frames']:
+                start, end, _ = self.decoded['frames'][0]
+                width = max(1, self._plot_width())
+                span = max(end - start, 10) * 1.1
+                self.spp = max(span / width, 1 / 32.0)
+                self.view_start = max(0.0, start - span * 0.04)
+            self._fresh = False
+
+        # ------------------------------------------------------------ recording
+
+        def start_recording(self):
+            if self.recording is not None or self.busy:
+                return
+            try:
+                nominal, data = self.rates()
+                sampling = self.sampling_rate()
+            except ValueError:
+                messagebox.showerror(tr('Eingabefehler'), tr('Bitrate, Datenrate und Abtastrate müssen positive '
+                                                             'ganze Zahlen sein.'), parent=self.root)
+                return
+            if sampling is not None and sampling <= 0:
+                return
+            bus = self.get_bus() if self.get_bus is not None else None
+            connection = dict(self.connection)
+            connection.update({'interface': 'usbtingo', 'channel': 0, 'bitrate': nominal, 'fd': bool(data),
+                               'data_bitrate': data or nominal})
+            if not isinstance(connection.get('serial'), str):
+                connection['serial'] = None  # a Vector serial number does not identify the USBtingo
+            self.busy = True
+            self._update_buttons()
+            set_text(self.status, 'Aufzeichnung wird gestartet …')
+
+            def work():
+                owned, started = False, None
+                try:
+                    if bus is None:
+                        from CAN_TraceRecorder import open_bus
+                        started = open_bus(connection)
+                        owned = True
+                    else:
+                        started = bus
+                    if not hasattr(started, 'recording_start'):
+                        raise RuntimeError(tr('Die Logikaufzeichnung braucht einen USBtingo '
+                                              '(python-can-usbtingo).'))
+                    folder = tempfile.mkdtemp(prefix='canlogic')
+                    path = os.path.join(folder, 'usbtingo_capture.sr')
+                    try:
+                        with working_directory(folder):
+                            started.recording_start(path, sampling)
+                    except Exception:
+                        shutil.rmtree(folder, ignore_errors=True)
+                        raise
+                    self.queue.put(('record_started', 0, {'bus': started, 'owned': owned, 'folder': folder,
+                                                          'path': path, 'started': time.time()}))
+                except Exception as error:
+                    if owned and started is not None:
+                        try:
+                            started.shutdown()
+                        except Exception:
+                            pass
+                    self.queue.put(('record_error', 0, str(error) or error.__class__.__name__))
+            threading.Thread(target=work, daemon=True).start()
+            self._poll()
+
+        def _recording_started(self, info):
+            self.busy = False
+            self.recording = info
+            info['draining'] = info['owned']
+            if info['owned']:  # nobody reads the CAN frames of an own connection: drop them
+                def drain():
+                    while info['draining']:
+                        try:
+                            info['bus'].recv(timeout=0.1)
+                        except Exception:
+                            time.sleep(0.1)
+                threading.Thread(target=drain, daemon=True).start()
+            self._update_buttons()
+            self._tick()
+
+        def _tick(self):
+            self.timer_job = None
+            if self.recording is None:
+                return
+            seconds = int(time.time() - self.recording['started'])
+            set_text(self.status, 'Aufzeichnung läuft … %s s', '%d' % seconds)
+            self.timer_job = self.root.after(500, self._tick)
+
+        def stop_recording(self):
+            info = self.recording
+            if info is None or self.busy:
+                return
+            self.busy = True
+            self._update_buttons()
+            set_text(self.status, 'Aufzeichnung wird beendet …')
+            threading.Thread(target=self._stop_work, args=(info,), daemon=True).start()
+            self._poll()
+
+        def _stop_work(self, info):
+            result = {'folder': info['folder'], 'path': info['path']}
+            try:
+                with working_directory(info['folder']):
+                    info['bus'].recording_stop()
+            except Exception as error:
+                result['error'] = str(error) or error.__class__.__name__
+            finally:
+                info['draining'] = False
+                if info['owned']:
+                    try:
+                        info['bus'].shutdown()
+                    except Exception:
+                        pass
+            self.queue.put(('record_stopped', 0, result))
+
+        def _forget_temp(self):
+            if self.temp_folder:
+                shutil.rmtree(self.temp_folder, ignore_errors=True)
+                self.temp_folder = None
+
+        # ------------------------------------------------------------ view
+
+        def _plot_width(self):
+            return max(1, self.canvas.winfo_width() - LABEL_WIDTH - 8)
+
+        def _total(self):
+            return len(self.capture['levels']) if self.capture is not None else 0
+
+        def _limit(self):
+            """Keep the view inside the capture."""
+            total, width = self._total(), self._plot_width()
+            if total <= 0:
+                self.view_start, self.spp = 0.0, 1.0
+                return
+            self.spp = min(max(self.spp, 1 / 32.0), max(total / float(width), 1 / 32.0))
+            span = self.spp * width
+            self.view_start = min(max(self.view_start, 0.0), max(0.0, total - span))
+
+        def fit(self):
+            if self.capture is None:
+                return
+            self.view_start = 0.0
+            self.spp = self._total() / float(self._plot_width())
+            self.render()
+
+        def zoom(self, factor, x=None):
+            """factor < 1 zooms in. x: canvas position that stays fixed (default: the middle)."""
+            if self.capture is None:
+                return
+            width = self._plot_width()
+            x = width / 2.0 if x is None else min(max(x - LABEL_WIDTH, 0), width)
+            anchor = self.view_start + x * self.spp
+            self.spp *= factor
+            self._limit()
+            self.view_start = anchor - x * self.spp
+            self.render()
+
+        def _on_wheel(self, event):
+            delta = event.delta
+            if delta:
+                self.zoom(0.8 if delta > 0 else 1.25, event.x)
+
+        def _on_pan_wheel(self, event):
+            self.view_start -= (1 if event.delta > 0 else -1) * self._plot_width() * self.spp * 0.1
+            self.render()
+
+        def _on_press(self, event):
+            self.drag = (event.x, self.view_start)
+
+        def _on_drag(self, event):
+            if self.drag is None:
+                return
+            self.view_start = self.drag[1] - (event.x - self.drag[0]) * self.spp
+            self.render()
+
+        def _on_scrollbar(self, action, *args):
+            if self.capture is None:
+                return
+            width = self._plot_width()
+            span = self.spp * width
+            if action == 'moveto':
+                self.view_start = float(args[0]) * self._total()
+            elif action == 'scroll':
+                self.view_start += int(args[0]) * (span * 0.9 if args[1] == 'pages' else span * 0.1)
+            self.render()
+
+        def _on_double(self, event):
+            """Double click on a field or bit: zoom to it."""
+            found = self._item_at(event.x, event.y)
+            if found is None:
+                return
+            start, end = found[0], found[1]
+            width = self._plot_width()
+            span = max(end - start, 4) * 1.4
+            self.spp = max(span / width, 1 / 32.0)
+            self.view_start = start - (span - (end - start)) / 2.0
+            self._limit()
+            self.render()
+
+        # ------------------------------------------------------------ hover
+
+        def _rows(self):
+            top = RULER_HEIGHT
+            return {'wave': (top, top + WAVE_HEIGHT), 'bits': (top + WAVE_HEIGHT, top + WAVE_HEIGHT + ROW_HEIGHT),
+                    'fields': (top + WAVE_HEIGHT + ROW_HEIGHT, top + WAVE_HEIGHT + 2 * ROW_HEIGHT)}
+
+        def _item_at(self, x, y):
+            """(start, end, text) of the bit or field under the pointer, or None."""
+            if self.decoded is None or self.capture is None or x < LABEL_WIDTH:
+                return None
+            sample = self.view_start + (x - LABEL_WIDTH) * self.spp
+            rows, decoded = self._rows(), self.decoded
+            if rows['bits'][0] <= y < rows['bits'][1]:
+                starts = decoded['starts']
+                index = bisect.bisect_right(starts, sample) - 1
+                if 0 <= index < len(starts) and sample < decoded['ends'][index]:
+                    flag = decoded['flags'][index]
+                    kind = tr('Stuff-Bit') if flag & 2 else tr('Bit')
+                    return (starts[index], decoded['ends'][index],
+                            '%s: %d%s' % (kind, flag & 1, ' (%s)' % tr('Datenphase') if flag & 4 else ''))
+            elif rows['fields'][0] <= y < rows['fields'][1]:
+                fields = decoded['fields']
+                index = bisect.bisect_right(decoded['field_starts'], sample) - 1
+                if 0 <= index < len(fields) and sample < fields[index][1]:
+                    return fields[index][0], fields[index][1], fields[index][3]
+            return None
+
+        def _on_motion(self, event):
+            self._show_hover(self._item_at(event.x, event.y), event.x)
+
+        def _show_hover(self, item, x=0):
+            if item == self.hover:
+                return
+            self.hover = item
+            if item is None:
+                if self.decoded is not None and self.capture is not None and not self.busy \
+                        and self.recording is None:
+                    self._decoded_status()
+                return
+            rate = self.capture['rate']
+            self.status.set('%s · %s' % (item[2], time_text(item[0] / float(rate))))
+
+        # ------------------------------------------------------------ drawing
+
+        def theme_changed(self):
+            self.render()
+
+        def language_changed(self):
+            self.render()
+
+        def render(self):
+            canvas = self.canvas
+            canvas.delete('all')
+            width = canvas.winfo_width()
+            if width < 50:
+                return
+            self._limit()
+            rows = self._rows()
+            tags = (('wave', 'CAN'), ('bits', 'CAN: Bits'), ('fields', 'CAN: Fields'))
+            canvas.create_line(LABEL_WIDTH - 4, 0, LABEL_WIDTH - 4, rows['fields'][1] + 30, fill=C.LINE)
+            font = self.theme.font_axis
+            for key, name in tags:
+                top, bottom = rows[key]
+                middle = (top + bottom) / 2.0
+                if key == 'wave':
+                    canvas.create_rectangle(14, middle - 11, 62, middle + 11, fill=C.INK, outline='')
+                    canvas.create_text(38, middle, text=name, fill=C.SURFACE, font=font)
+                else:
+                    canvas.create_text(14, middle, text='▸ ' + name, fill=C.INK, font=font, anchor=tk.W)
+            if self.capture is None:
+                canvas.create_text(LABEL_WIDTH + 20, rows['wave'][0] + 30, anchor=tk.W, fill=C.MUTED,
+                                   text=tr('Keine Aufzeichnung. Mit dem roten Punkt den USBtingo aufzeichnen lassen '
+                                           'oder eine Sigrok-Datei (.sr) öffnen.'), font=font)
+                self._update_scrollbar()
+                return
+            self._draw_ruler(width)
+            self._draw_wave(width, rows['wave'])
+            if self.decoded is not None:
+                self._draw_bits(width, rows['bits'])
+                self._draw_fields(width, rows['fields'])
+            self._update_scrollbar()
+
+        def _update_scrollbar(self):
+            total = self._total()
+            if total <= 0:
+                self.scroll.set(0, 1)
+                return
+            span = self._plot_width() * self.spp
+            self.scroll.set(self.view_start / total, min(1.0, (self.view_start + span) / total))
+
+        def _x(self, sample):
+            return LABEL_WIDTH + (sample - self.view_start) / self.spp
+
+        def _draw_ruler(self, width):
+            canvas, rate = self.canvas, float(self.capture['rate'])
+            font = self.theme.font_axis
+            first, last = self.view_start / rate, (self.view_start + self._plot_width() * self.spp) / rate
+            step = nice_step(110 * self.spp / rate)
+            factor, unit = time_unit(step)
+            decimals = max(0, int(-math.floor(math.log10(step / factor) + 1e-9)))
+            tick = math.ceil(first / step - 1e-9)
+            bottom = self._rows()['fields'][1] + 30
+            while tick * step <= last:
+                seconds = tick * step
+                x = self._x(seconds * rate)
+                canvas.create_line(x, RULER_HEIGHT - 8, x, RULER_HEIGHT, fill=C.MUTED)
+                canvas.create_line(x, RULER_HEIGHT, x, bottom, fill=C.GRID)
+                canvas.create_text(x, RULER_HEIGHT - 12, text='+' + number_text(seconds / factor, decimals) + ' ' + unit,
+                                   fill=C.MUTED, font=font, anchor=tk.S)
+                tick += 1
+            canvas.create_line(LABEL_WIDTH, RULER_HEIGHT, width, RULER_HEIGHT, fill=C.LINE)
+
+        def _draw_wave(self, width, row):
+            canvas, capture = self.canvas, self.capture
+            levels, edges = capture['levels'], capture['edges']
+            top, bottom = row
+            high, low = top + 10, bottom - 10
+            color = C.INK
+            a = self.view_start
+            b = a + self._plot_width() * self.spp
+            lo, hi = bisect.bisect_left(edges, int(a) + 1), bisect.bisect_left(edges, int(b) + 1)
+            canvas.create_rectangle(LABEL_WIDTH, top + 2, width - 4, bottom - 2, fill=C.APP_BG, outline='')
+            if hi - lo > 2 * self._plot_width():  # too dense: only mark where the level changes
+                columns = set()
+                for index in range(lo, hi):
+                    columns.add(int(self._x(edges[index])))
+                for x in columns:
+                    canvas.create_line(x, high, x, low, fill=color)
+                return
+            level = levels[min(int(a), len(levels) - 1)]
+            x = float(LABEL_WIDTH)
+            points = [x, high if level else low]
+            for index in range(lo, hi):
+                edge_x = self._x(edges[index])
+                points += [edge_x, high if level else low]
+                level = 1 - level
+                points += [edge_x, high if level else low]
+            points += [width - 4, high if level else low]
+            if len(points) >= 4:
+                canvas.create_line(*points, fill=color, width=1.5)
+
+        def _hexagon(self, x0, x1, top, bottom, fill, text, text_color, outline=''):
+            canvas = self.canvas
+            point = min(5.0, (x1 - x0) / 2.0)
+            middle = (top + bottom) / 2.0
+            canvas.create_polygon(x0, middle, x0 + point, top, x1 - point, top, x1, middle, x1 - point, bottom,
+                                  x0 + point, bottom, fill=fill, outline=outline or fill)
+            if text and self.font.measure(text) + 2 * point + 4 <= x1 - x0:
+                canvas.create_text((x0 + x1) / 2.0, middle, text=text, fill=text_color, font=self.theme.font_axis)
+
+        def _visible(self, starts, ends_at):
+            """Index range of the items overlapping the view."""
+            a = self.view_start
+            b = a + self._plot_width() * self.spp
+            first = max(0, bisect.bisect_right(starts, a) - 1)
+            last = bisect.bisect_right(starts, b)
+            return first, last
+
+        def _draw_bits(self, width, row):
+            decoded = self.decoded
+            top, bottom = row[0] + 4, row[1] - 4
+            starts, ends, flags = decoded['starts'], decoded['ends'], decoded['flags']
+            first, last = self._visible(starts, ends)
+            if last > first and (ends[first] - starts[first]) / self.spp < 3:  # too small for single bits
+                self.canvas.create_line(LABEL_WIDTH, (top + bottom) / 2, width - 4, (top + bottom) / 2, fill=C.LINE)
+                return
+            normal, stuff = C.SERIES_COLORS[6], C.SERIES_COLORS[0]
+            for index in range(first, last):
+                x0, x1 = self._x(starts[index]), self._x(ends[index])
+                if x1 - x0 < 1.0:
+                    continue
+                flag = flags[index]
+                if flag & 2:
+                    self._hexagon(x0 + 0.5, x1 - 0.5, top, bottom, stuff, str(flag & 1), C.ON_ACCENT)
+                else:
+                    self._hexagon(x0 + 0.5, x1 - 0.5, top, bottom, normal, str(flag & 1), DARK_TEXT)
+
+        def _draw_fields(self, width, row):
+            decoded = self.decoded
+            top, bottom = row[0] + 4, row[1] - 4
+            fields = decoded['fields']
+            first, last = self._visible(decoded['field_starts'], None)
+            for index in range(first, min(last, len(fields))):
+                start, end, label, detail, kind = fields[index]
+                x0, x1 = self._x(start), self._x(end)
+                if x1 < LABEL_WIDTH or x1 - x0 < 1.0:
+                    continue
+                x0 = max(x0, LABEL_WIDTH)
+                if kind == 'error':
+                    fill, ink = C.DANGER, C.ON_ACCENT
+                else:
+                    fill, ink = C.SERIES_COLORS[KIND_COLORS.get(kind, 7)], DARK_TEXT
+                self._hexagon(x0 + 0.5, x1 - 0.5, top, bottom, fill, label, ink)
+
+        # ------------------------------------------------------------ window
+
+        def window_settings(self):
+            return {'geometry': window_geometry(self.root), 'bitrate': self.bitrate.get(), 'fd': self.fd.get(),
+                    'data_bitrate': self.data_bitrate.get(), 'sample_rate': self.sample_rate.get()}
+
+        def close(self):
+            self.job += 1  # stops a running decoder
+            if self.recording is not None and not self.busy:
+                threading.Thread(target=self._stop_work, args=(self.recording,), daemon=True).start()
+            for job in (self.poll_job, self.decode_job, self.timer_job):
+                if job is not None:
+                    try:
+                        self.root.after_cancel(job)
+                    except tk.TclError:
+                        pass
+            if self.recording is None:
+                self._forget_temp()
+            self.root.destroy()

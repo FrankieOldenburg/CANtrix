@@ -1,0 +1,331 @@
+{
+  "format": "CANtrix",
+  "version": 1,
+  "docked": true,
+  "speed": "100\u00d7",
+  "follow_cursor": true,
+  "databases": [
+    {
+      "path": "Database/Demo/demo_vehicle.dbc",
+      "channel": null
+    }
+  ],
+  "database": "Database/Demo/demo_vehicle.dbc",
+  "traces": [
+    {
+      "path": "Traces/Demo/demo_trace.asc"
+    }
+  ],
+  "trace": "Traces/Demo/demo_trace.asc",
+  "panel": "Panel/Demo/demo_vehicle_panel.xvp",
+  "panels": [
+    "Panel/Demo/demo_vehicle_panel.xvp"
+  ],
+  "generator": [
+    {
+      "id": 512,
+      "data": "9A 0F 14 00 A4 44 00 00",
+      "period": 100,
+      "key": ""
+    }
+  ],
+  "channel": "1",
+  "windows": {
+    "main": {
+      "geometry": "1873x1062+13+45"
+    },
+    "trace_viewer": {
+      "open": true,
+      "settings": {
+        "geometry": ""
+      },
+      "dock": {
+        "x": 70,
+        "y": 257,
+        "width": 1537,
+        "height": 568,
+        "maximized": false
+      },
+      "view": {
+        "mode": "chronological",
+        "selectedSignals": [],
+        "xRange": [
+          0.001349,
+          59.981383
+        ],
+        "yRange": null,
+        "cursorTime": null,
+        "tracePage": 0,
+        "traceFilter": "",
+        "signalFilter": "",
+        "absoluteTime": false,
+        "zoomAxis": "x",
+        "showEnvironment": true,
+        "showErrors": false,
+        "showDescription": true,
+        "secondCursor": false,
+        "cursor2Time": null,
+        "traceIndex": 0,
+        "traces": [
+          {
+            "mode": "chronological",
+            "absoluteTime": false,
+            "showEnvironment": true,
+            "showErrors": false,
+            "showDescription": true,
+            "tracePage": 0,
+            "traceFilter": "",
+            "hidden": []
+          },
+          {
+            "mode": "chronological",
+            "absoluteTime": false,
+            "showEnvironment": false,
+            "showErrors": false,
+            "tracePage": 0,
+            "traceFilter": "",
+            "hidden": []
+          },
+          {
+            "mode": "chronological",
+            "absoluteTime": false,
+            "showEnvironment": false,
+            "showErrors": false,
+            "tracePage": 0,
+            "traceFilter": "",
+            "hidden": []
+          },
+          {
+            "mode": "chronological",
+            "absoluteTime": false,
+            "showEnvironment": false,
+            "showErrors": false,
+            "tracePage": 0,
+            "traceFilter": "",
+            "hidden": []
+          },
+          {
+            "mode": "chronological",
+            "absoluteTime": false,
+            "showEnvironment": false,
+            "showErrors": false,
+            "tracePage": 0,
+            "traceFilter": "",
+            "hidden": []
+          }
+        ],
+        "graphIndex": 0,
+        "graphs": [
+          {
+            "selectedSignals": [],
+            "xRange": [
+              0.001349,
+              59.981383
+            ],
+            "yRange": null,
+            "cursorTime": null,
+            "secondCursor": false,
+            "cursor2Time": null,
+            "zoomAxis": "x"
+          },
+          {
+            "selectedSignals": [],
+            "xRange": null,
+            "yRange": null,
+            "cursorTime": null,
+            "secondCursor": false,
+            "cursor2Time": null,
+            "zoomAxis": "x"
+          },
+          {
+            "selectedSignals": [],
+            "xRange": null,
+            "yRange": null,
+            "cursorTime": null,
+            "secondCursor": false,
+            "cursor2Time": null,
+            "zoomAxis": "x"
+          },
+          {
+            "selectedSignals": [],
+            "xRange": null,
+            "yRange": null,
+            "cursorTime": null,
+            "secondCursor": false,
+            "cursor2Time": null,
+            "zoomAxis": "x"
+          },
+          {
+            "selectedSignals": [],
+            "xRange": null,
+            "yRange": null,
+            "cursorTime": null,
+            "secondCursor": false,
+            "cursor2Time": null,
+            "zoomAxis": "x"
+          }
+        ]
+      }
+    },
+    "graph_viewer": {
+      "open": true,
+      "settings": {
+        "geometry": ""
+      },
+      "dock": {
+        "x": 70,
+        "y": 257,
+        "width": 1537,
+        "height": 568,
+        "maximized": false
+      },
+      "view": {
+        "mode": "chronological",
+        "selectedSignals": [],
+        "xRange": [
+          0.001349,
+          59.981383
+        ],
+        "yRange": null,
+        "cursorTime": null,
+        "tracePage": 0,
+        "traceFilter": "",
+        "signalFilter": "",
+        "absoluteTime": false,
+        "zoomAxis": "x",
+        "showEnvironment": true,
+        "showErrors": false,
+        "showDescription": true,
+        "secondCursor": false,
+        "cursor2Time": null,
+        "traceIndex": 0,
+        "traces": [
+          {
+            "mode": "chronological",
+            "absoluteTime": false,
+            "showEnvironment": true,
+            "showErrors": false,
+            "showDescription": true,
+            "tracePage": 0,
+            "traceFilter": "",
+            "hidden": []
+          },
+          {
+            "mode": "chronological",
+            "absoluteTime": false,
+            "showEnvironment": false,
+            "showErrors": false,
+            "tracePage": 0,
+            "traceFilter": "",
+            "hidden": []
+          },
+          {
+            "mode": "chronological",
+            "absoluteTime": false,
+            "showEnvironment": false,
+            "showErrors": false,
+            "tracePage": 0,
+            "traceFilter": "",
+            "hidden": []
+          },
+          {
+            "mode": "chronological",
+            "absoluteTime": false,
+            "showEnvironment": false,
+            "showErrors": false,
+            "tracePage": 0,
+            "traceFilter": "",
+            "hidden": []
+          },
+          {
+            "mode": "chronological",
+            "absoluteTime": false,
+            "showEnvironment": false,
+            "showErrors": false,
+            "tracePage": 0,
+            "traceFilter": "",
+            "hidden": []
+          }
+        ],
+        "graphIndex": 0,
+        "graphs": [
+          {
+            "selectedSignals": [],
+            "xRange": [
+              0.001349,
+              59.981383
+            ],
+            "yRange": null,
+            "cursorTime": null,
+            "secondCursor": false,
+            "cursor2Time": null,
+            "zoomAxis": "x"
+          },
+          {
+            "selectedSignals": [],
+            "xRange": null,
+            "yRange": null,
+            "cursorTime": null,
+            "secondCursor": false,
+            "cursor2Time": null,
+            "zoomAxis": "x"
+          },
+          {
+            "selectedSignals": [],
+            "xRange": null,
+            "yRange": null,
+            "cursorTime": null,
+            "secondCursor": false,
+            "cursor2Time": null,
+            "zoomAxis": "x"
+          },
+          {
+            "selectedSignals": [],
+            "xRange": null,
+            "yRange": null,
+            "cursorTime": null,
+            "secondCursor": false,
+            "cursor2Time": null,
+            "zoomAxis": "x"
+          },
+          {
+            "selectedSignals": [],
+            "xRange": null,
+            "yRange": null,
+            "cursorTime": null,
+            "secondCursor": false,
+            "cursor2Time": null,
+            "zoomAxis": "x"
+          }
+        ]
+      }
+    },
+    "generator": {
+      "open": true,
+      "settings": {
+        "geometry": ""
+      },
+      "dock": {
+        "x": 554,
+        "y": 530,
+        "width": 1294,
+        "height": 376,
+        "maximized": false
+      }
+    },
+    "panel_viewer": {
+      "open": true,
+      "settings": {
+        "geometry": ""
+      },
+      "dock": {
+        "x": 901,
+        "y": 34,
+        "width": 926,
+        "height": 485,
+        "maximized": false
+      }
+    }
+  },
+  "plugins": []
+}

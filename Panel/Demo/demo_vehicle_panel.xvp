@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Panel Type="Vector.CANalyzer.Panels.PanelSerializer, Vector.CANalyzer.Panels.Serializer, Version=10.0.0.0, Culture=neutral, PublicKeyToken=null">
+  <Object Type="Vector.CANalyzer.Panels.Runtime.Panel, Vector.CANalyzer.Panels.Common, Version=10.0.0.0, Culture=neutral, PublicKeyToken=null" Name="Panel" Children="Controls" ControlName="Demo Vehicle &amp; I/O Monitor">
+    <Object Type="Vector.CANalyzer.Panels.Design.GroupBoxControl, Vector.CANalyzer.Panels.CommonControls, Version=10.0.0.0, Culture=neutral, PublicKeyToken=null" Name="GroupBoxDrive" Children="Controls" ControlName="Antriebsstrang (CAN 0x100)">
+      <Object Type="Vector.CANalyzer.Panels.Design.MeterControl, Vector.CANalyzer.Panels.CommonControls, Version=10.0.0.0, Culture=neutral, PublicKeyToken=null" Name="MeterRPM" ControlName="MeterRPM">
+        <Property Name="Name">MeterRPM</Property>
+        <Property Name="Size">170, 170</Property>
+        <Property Name="Location">15, 25</Property>
+        <Property Name="ScaleMax">10000</Property>
+        <Property Name="ScaleMin">0</Property>
+        <Property Name="MajorTickSpacing">2000</Property>
+        <Property Name="MinorTickSpacing">500</Property>
+        <Property Name="DescriptionText">Motordrehzahl [rpm]</Property>
+        <Property Name="SymbolConfiguration">5;2;demo_vehicle;;DriveStatus;MotorRPM;1;CAN;;-1;;;</Property>
+      </Object>
+      <Object Type="Vector.CANalyzer.Panels.Design.NumericUpDownControl, Vector.CANalyzer.Panels.CommonControls, Version=10.0.0.0, Culture=neutral, PublicKeyToken=null" Name="NumTorque" ControlName="NumTorque">
+        <Property Name="Name">NumTorque</Property>
+        <Property Name="Size">180, 22</Property>
+        <Property Name="Location">200, 35</Property>
+        <Property Name="ReadOnlyControl">True</Property>
+        <Property Name="DecimalPlaces">1</Property>
+        <Property Name="DisplayLabel">Left</Property>
+        <Property Name="DescriptionText">Drehmoment [Nm]:</Property>
+        <Property Name="DescriptionSize">115, 22</Property>
+        <Property Name="SymbolConfiguration">5;2;demo_vehicle;;DriveStatus;MotorTorque;1;CAN;;-1;;;</Property>
+      </Object>
+      <Object Type="Vector.CANalyzer.Panels.Design.ComboBoxControl, Vector.CANalyzer.Panels.CommonControls, Version=10.0.0.0, Culture=neutral, PublicKeyToken=null" Name="ComboDriveMode" ControlName="ComboDriveMode">
+        <Property Name="Name">ComboDriveMode</Property>
+        <Property Name="Size">180, 22</Property>
+        <Property Name="Location">200, 70</Property>
+        <Property Name="ReadOnlyControl">True</Property>
+        <Property Name="DisplayLabel">Left</Property>
+        <Property Name="DescriptionText">Fahrmodus:</Property>
+        <Property Name="DescriptionSize">115, 22</Property>
+        <Property Name="SymbolConfiguration">5;2;demo_vehicle;;DriveStatus;DriveMode;1;CAN;;-1;;;</Property>
+      </Object>
+      <Object Type="Vector.CANalyzer.Panels.Design.NumericUpDownControl, Vector.CANalyzer.Panels.CommonControls, Version=10.0.0.0, Culture=neutral, PublicKeyToken=null" Name="NumInvTemp" ControlName="NumInvTemp">
+        <Property Name="Name">NumInvTemp</Property>
+        <Property Name="Size">180, 22</Property>
+        <Property Name="Location">200, 105</Property>
+        <Property Name="ReadOnlyControl">True</Property>
+        <Property Name="DecimalPlaces">0</Property>
+        <Property Name="DisplayLabel">Left</Property>
+        <Property Name="DescriptionText">Inverter Temp [°C]:</Property>
+        <Property Name="DescriptionSize">115, 22</Property>
+        <Property Name="SymbolConfiguration">5;2;demo_vehicle;;DriveStatus;InverterTemp;1;CAN;;-1;;;</Property>
+      </Object>
+      <Object Type="Vector.CANalyzer.Panels.Design.LEDControl, Vector.CANalyzer.Panels.CommonControls, Version=10.0.0.0, Culture=neutral, PublicKeyToken=null" Name="LedFault" ControlName="LedFault">
+        <Property Name="Name">LedFault</Property>
+        <Property Name="Size">24, 24</Property>
+        <Property Name="Location">325, 140</Property>
+        <Property Name="SwitchValues">1;2;0;1</Property>
+        <Property Name="SwitchValuesVTXml">&lt;Version&gt;2&lt;/Version&gt;&lt;Count&gt;2&lt;/Count&gt;&lt;RxValue&gt;0&lt;/RxValue&gt;&lt;LowerUpper&gt;Lower&lt;/LowerUpper&gt;&lt;TxValue&gt;0&lt;/TxValue&gt;&lt;Color&gt;LimeGreen&lt;/Color&gt;&lt;RxValue&gt;1&lt;/RxValue&gt;&lt;LowerUpper&gt;Lower&lt;/LowerUpper&gt;&lt;TxValue&gt;1&lt;/TxValue&gt;&lt;Color&gt;Red&lt;/Color&gt;</Property>
+        <Property Name="SymbolConfiguration">5;2;demo_vehicle;;DriveStatus;FaultActive;1;CAN;;-1;;;</Property>
+      </Object>
+      <Object Type="Vector.CANalyzer.Panels.Design.StaticTextControl, Vector.CANalyzer.Panels.CommonControls, Version=10.0.0.0, Culture=neutral, PublicKeyToken=null" Name="LabelFault" ControlName="LabelFault">
+        <Property Name="Name">LabelFault</Property>
+        <Property Name="Size">115, 20</Property>
+        <Property Name="Location">200, 143</Property>
+        <Property Name="Text">Systemfehler:</Property>
+      </Object>
+      <Property Name="Name">GroupBoxDrive</Property>
+      <Property Name="Size">395, 210</Property>
+      <Property Name="Location">15, 15</Property>
+      <Property Name="Text">Antriebsstrang (CAN 0x100)</Property>
+      <Property Name="TabIndex">0</Property>
+    </Object>
+    <Object Type="Vector.CANalyzer.Panels.Design.GroupBoxControl, Vector.CANalyzer.Panels.CommonControls, Version=10.0.0.0, Culture=neutral, PublicKeyToken=null" Name="GroupBoxBattery" Children="Controls" ControlName="Hochvolt-Batterie &amp; Geschwindigkeit">
+      <Object Type="Vector.CANalyzer.Panels.Design.ProgressBarControl, Vector.CANalyzer.Panels.CommonControls, Version=10.0.0.0, Culture=neutral, PublicKeyToken=null" Name="ProgSOC" ControlName="ProgSOC">
+        <Property Name="Name">ProgSOC</Property>
+        <Property Name="Size">230, 24</Property>
+        <Property Name="Location">135, 30</Property>
+        <Property Name="Maximum">100</Property>
+        <Property Name="Minimum">0</Property>
+        <Property Name="ShowPercentage">True</Property>
+        <Property Name="SymbolConfiguration">5;2;demo_vehicle;;BatteryStatus;StateOfCharge;1;CAN;;-1;;;</Property>
+      </Object>
+      <Object Type="Vector.CANalyzer.Panels.Design.StaticTextControl, Vector.CANalyzer.Panels.CommonControls, Version=10.0.0.0, Culture=neutral, PublicKeyToken=null" Name="LabelSOC" ControlName="LabelSOC">
+        <Property Name="Name">LabelSOC</Property>
+        <Property Name="Size">115, 20</Property>
+        <Property Name="Location">15, 33</Property>
+        <Property Name="Text">Batterie SOC [%]:</Property>
+      </Object>
+      <Object Type="Vector.CANalyzer.Panels.Design.NumericUpDownControl, Vector.CANalyzer.Panels.CommonControls, Version=10.0.0.0, Culture=neutral, PublicKeyToken=null" Name="NumPackVolt" ControlName="NumPackVolt">
+        <Property Name="Name">NumPackVolt</Property>
+        <Property Name="Size">170, 22</Property>
+        <Property Name="Location">15, 70</Property>
+        <Property Name="ReadOnlyControl">True</Property>
+        <Property Name="DecimalPlaces">1</Property>
+        <Property Name="DisplayLabel">Left</Property>
+        <Property Name="DescriptionText">HV-Spannung [V]:</Property>
+        <Property Name="DescriptionSize">105, 22</Property>
+        <Property Name="SymbolConfiguration">5;2;demo_vehicle;;BatteryStatus;PackVoltage;1;CAN;;-1;;;</Property>
+      </Object>
+      <Object Type="Vector.CANalyzer.Panels.Design.NumericUpDownControl, Vector.CANalyzer.Panels.CommonControls, Version=10.0.0.0, Culture=neutral, PublicKeyToken=null" Name="NumPackCurr" ControlName="NumPackCurr">
+        <Property Name="Name">NumPackCurr</Property>
+        <Property Name="Size">170, 22</Property>
+        <Property Name="Location">195, 70</Property>
+        <Property Name="ReadOnlyControl">True</Property>
+        <Property Name="DecimalPlaces">1</Property>
+        <Property Name="DisplayLabel">Left</Property>
+        <Property Name="DescriptionText">HV-Strom [A]:</Property>
+        <Property Name="DescriptionSize">95, 22</Property>
+        <Property Name="SymbolConfiguration">5;2;demo_vehicle;;BatteryStatus;PackCurrent;1;CAN;;-1;;;</Property>
+      </Object>
+      <Object Type="Vector.CANalyzer.Panels.Design.NumericUpDownControl, Vector.CANalyzer.Panels.CommonControls, Version=10.0.0.0, Culture=neutral, PublicKeyToken=null" Name="NumTargetSpeed" ControlName="NumTargetSpeed">
+        <Property Name="Name">NumTargetSpeed</Property>
+        <Property Name="Size">220, 22</Property>
+        <Property Name="Location">15, 110</Property>
+        <Property Name="ReadOnlyControl">True</Property>
+        <Property Name="DecimalPlaces">1</Property>
+        <Property Name="DisplayLabel">Left</Property>
+        <Property Name="DescriptionText">Soll-Geschwindigkeit [km/h]:</Property>
+        <Property Name="DescriptionSize">150, 22</Property>
+        <Property Name="SymbolConfiguration">5;2;demo_vehicle;;DashboardControl;TargetSpeed;1;CAN;;-1;;;</Property>
+      </Object>
+      <Property Name="Name">GroupBoxBattery</Property>
+      <Property Name="Size">380, 210</Property>
+      <Property Name="Location">425, 15</Property>
+      <Property Name="Text">Hochvolt-Batterie &amp; Geschwindigkeit (CAN 0x200 / 0x300)</Property>
+      <Property Name="TabIndex">1</Property>
+    </Object>
+    <Object Type="Vector.CANalyzer.Panels.Design.GroupBoxControl, Vector.CANalyzer.Panels.CommonControls, Version=10.0.0.0, Culture=neutral, PublicKeyToken=null" Name="GroupBoxIO" Children="Controls" ControlName="Hardware I/O (VN1630A/VN1640A Environment Variables)">
+      <Object Type="Vector.CANalyzer.Panels.Design.ProgressBarControl, Vector.CANalyzer.Panels.CommonControls, Version=10.0.0.0, Culture=neutral, PublicKeyToken=null" Name="BarAIN" ControlName="BarAIN">
+        <Property Name="Name">BarAIN</Property>
+        <Property Name="Size">330, 26</Property>
+        <Property Name="Location">165, 32</Property>
+        <Property Name="Maximum">18</Property>
+        <Property Name="Minimum">0</Property>
+        <Property Name="SymbolConfiguration">5;16;demo_vehicle;;;IO_VN1600_1_AIN;1;;;-1;;;</Property>
+      </Object>
+      <Object Type="Vector.CANalyzer.Panels.Design.StaticTextControl, Vector.CANalyzer.Panels.CommonControls, Version=10.0.0.0, Culture=neutral, PublicKeyToken=null" Name="LabelAIN" ControlName="LabelAIN">
+        <Property Name="Name">LabelAIN</Property>
+        <Property Name="Size">145, 20</Property>
+        <Property Name="Location">15, 35</Property>
+        <Property Name="Text">Analogeingang AIN [0..18V]:</Property>
+      </Object>
+      <Object Type="Vector.CANalyzer.Panels.Design.NumericUpDownControl, Vector.CANalyzer.Panels.CommonControls, Version=10.0.0.0, Culture=neutral, PublicKeyToken=null" Name="NumAIN" ControlName="NumAIN">
+        <Property Name="Name">NumAIN</Property>
+        <Property Name="Size">95, 24</Property>
+        <Property Name="Location">510, 33</Property>
+        <Property Name="ReadOnlyControl">True</Property>
+        <Property Name="DecimalPlaces">2</Property>
+        <Property Name="DisplayLabel">Hide</Property>
+        <Property Name="SymbolConfiguration">5;16;demo_vehicle;;;IO_VN1600_1_AIN;1;;;-1;;;</Property>
+      </Object>
+      <Object Type="Vector.CANalyzer.Panels.Design.StaticTextControl, Vector.CANalyzer.Panels.CommonControls, Version=10.0.0.0, Culture=neutral, PublicKeyToken=null" Name="LabelAINUnit" ControlName="LabelAINUnit">
+        <Property Name="Name">LabelAINUnit</Property>
+        <Property Name="Size">25, 20</Property>
+        <Property Name="Location">612, 36</Property>
+        <Property Name="Text">V</Property>
+      </Object>
+      <Object Type="Vector.CANalyzer.Panels.Design.StaticTextControl, Vector.CANalyzer.Panels.CommonControls, Version=10.0.0.0, Culture=neutral, PublicKeyToken=null" Name="LabelDIN0" ControlName="LabelDIN0">
+        <Property Name="Name">LabelDIN0</Property>
+        <Property Name="Size">145, 20</Property>
+        <Property Name="Location">15, 80</Property>
+        <Property Name="Text">Digitaleingang DIN0:</Property>
+      </Object>
+      <Object Type="Vector.CANalyzer.Panels.Design.LEDControl, Vector.CANalyzer.Panels.CommonControls, Version=10.0.0.0, Culture=neutral, PublicKeyToken=null" Name="LedDIN0" ControlName="LedDIN0">
+        <Property Name="Name">LedDIN0</Property>
+        <Property Name="Size">26, 26</Property>
+        <Property Name="Location">165, 76</Property>
+        <Property Name="SwitchValues">1;2;0;1</Property>
+        <Property Name="SwitchValuesVTXml">&lt;Version&gt;2&lt;/Version&gt;&lt;Count&gt;2&lt;/Count&gt;&lt;RxValue&gt;0&lt;/RxValue&gt;&lt;LowerUpper&gt;Lower&lt;/LowerUpper&gt;&lt;TxValue&gt;0&lt;/TxValue&gt;&lt;Color&gt;Gray&lt;/Color&gt;&lt;RxValue&gt;1&lt;/RxValue&gt;&lt;LowerUpper&gt;Lower&lt;/LowerUpper&gt;&lt;TxValue&gt;1&lt;/TxValue&gt;&lt;Color&gt;Orange&lt;/Color&gt;</Property>
+        <Property Name="SymbolConfiguration">5;16;demo_vehicle;;;IO_VN1600_1_DIN0;1;;;-1;;;</Property>
+      </Object>
+      <Object Type="Vector.CANalyzer.Panels.Design.ComboBoxControl, Vector.CANalyzer.Panels.CommonControls, Version=10.0.0.0, Culture=neutral, PublicKeyToken=null" Name="ComboDIN0" ControlName="ComboDIN0">
+        <Property Name="Name">ComboDIN0</Property>
+        <Property Name="Size">140, 22</Property>
+        <Property Name="Location">205, 78</Property>
+        <Property Name="ReadOnlyControl">True</Property>
+        <Property Name="DisplayLabel">Hide</Property>
+        <Property Name="SymbolConfiguration">5;16;demo_vehicle;;;IO_VN1600_1_DIN0;1;;;-1;;;</Property>
+      </Object>
+      <Property Name="Name">GroupBoxIO</Property>
+      <Property Name="Size">790, 125</Property>
+      <Property Name="Location">15, 240</Property>
+      <Property Name="Text">Hardware I/O (VN1630A/VN1640A Environment Variables)</Property>
+      <Property Name="TabIndex">2</Property>
+    </Object>
+    <Property Name="Name">Panel</Property>
+    <Property Name="Size">820, 380</Property>
+    <Property Name="BackColor">WhiteSmoke</Property>
+  </Object>
+</Panel>
