@@ -640,6 +640,8 @@ EN = {
     'Zurücksetzen': 'Reset',
     'Der Trace enthält keine Startzeit, die absolute Zeit ist unbekannt.':
         'The trace contains no start time, the absolute time is unknown.',
+    'Startzeit: %.3f s': 'Start time: %.3f s',
+    'Endzeit: %.3f s': 'End time: %.3f s',
 
     # CAN_TraceViewer.py
     '%s s · %s := %s (Umgebungsvariable)': '%s s · %s := %s (environment variable)',

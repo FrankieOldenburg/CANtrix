@@ -365,6 +365,7 @@ if tk is not None:
                     app.on_time_changed = app.on_playing_changed = None
                     app.time_var = tk.StringVar()
                     app.follow_var = tk.BooleanVar(value=False)
+            self._push_range()
 
         # ------------------------------------------------------------ layout
 
@@ -621,6 +622,7 @@ if tk is not None:
                 marker = tk.Frame(toolbar, width=6, bg=C.WARNING, cursor='sb_h_double_arrow')
                 marker.bind('<B1-Motion>', lambda event, which=index: self._drag_marker(which, event))
                 marker.bind('<ButtonRelease-1>', lambda event: self._apply_selection())
+                self.theme.bind_tooltip(marker, lambda index=index: self._range_marker_tooltip(index))
                 self.range_markers.append(marker)
             self.time_slider.bind('<Configure>', lambda event: self._place_markers(), add='+')
             self._update_recording_buttons()
@@ -1233,7 +1235,7 @@ if tk is not None:
                 return 1.0
 
         def _local_play(self):
-            t0, t1 = self._local_range()
+            t0, t1 = self._playback_range()
             if self._local_job is not None or t1 <= t0:
                 return
             self._play_engaged = True
@@ -1247,9 +1249,10 @@ if tk is not None:
             speed = self._local_speed()
             moment = float('inf') if speed == float('inf') else self._local_moment + (now - self._local_last) * speed
             self._local_last = now
-            if moment >= self._local_range()[1]:
+            _, end = self._playback_range()
+            if moment >= end:
                 self._local_job = None
-                self._local_set(self._local_range()[1])
+                self._local_set(end)
                 self._playing_changed()
                 return
             self._local_set(moment)
@@ -1260,6 +1263,14 @@ if tk is not None:
                 self.root.after_cancel(self._local_job)
                 self._local_job = None
                 self._playing_changed()
+
+        def _playback_range(self):
+            """Return the selected time range, or the complete trace when none is selected."""
+            t0, t1 = self._local_range()
+            if not self.selection:
+                return t0, t1
+            start, end = self.selection
+            return min(max(start, t0), t1), min(max(end, t0), t1)
 
         def change_source(self):
             """Switch 'Trace'/'Live' (toolbar or menu): Trace Viewer and Panel Viewer together. Live needs the
@@ -1335,6 +1346,15 @@ if tk is not None:
             except (tk.TclError, ValueError, IndexError):  # slider not yet shown or being closed
                 pass
 
+        def _range_marker_tooltip(self, index):
+            try:
+                t0, t1 = self._slider_domain()
+                start, end = self.selection or (t0, t1)
+                moment = start if index == 0 else end
+                return tr('Startzeit: %.3f s') % moment if index == 0 else tr('Endzeit: %.3f s') % moment
+            except (tk.TclError, ValueError, TypeError):
+                return None
+
         def _drag_marker(self, index, event):
             try:
                 t0, t1 = self._slider_domain()
@@ -1364,6 +1384,10 @@ if tk is not None:
             self._push_range()
 
         def _push_range(self):
+            panel = self._master()
+            if panel is not None:
+                start, end = (None, None) if self.source.get() == 'live' or not self.selection else self.selection
+                panel.set_play_range(start, end)
             viewer = self._viewer()
             if viewer is not None:
                 start, end = (None, None) if self.source.get() == 'live' or not self.selection else self.selection

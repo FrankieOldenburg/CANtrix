@@ -401,6 +401,7 @@ if tk is not None:
             self.images = {}  # (file, width, height) -> PhotoImage or None
             self.t0 = self.t1 = 0.0
             self.moment = 0.0
+            self.play_start = self.play_end = None
             self._play_job = self._render_job = None
             self.on_playing_changed = None  # callback(): playing started or stopped (buttons in the main window)
             self._play_last = None
@@ -641,6 +642,19 @@ if tk is not None:
             self.stop()
             self.set_time(float(value))
 
+        def set_play_range(self, start, end):
+            """Set the time range used by playback; None means the complete trace."""
+            if start is None or end is None:
+                self.play_start = self.play_end = None
+                return
+            self.play_start = min(max(float(start), self.t0), self.t1)
+            self.play_end = min(max(float(end), self.play_start), self.t1)
+
+        def _playback_range(self):
+            if self.play_start is None or self.play_end is None:
+                return self.t0, self.t1
+            return self.play_start, self.play_end
+
         def set_cursor(self, moment):
             """Cursor of the Trace Viewer was set (CANtrix.py); followed if the box is ticked."""
             if moment is None or not self.follow_var.get() or self.live():
@@ -666,10 +680,11 @@ if tk is not None:
             return self.t1 > self.t0 and not self.live()
 
         def play(self):
-            """Play the trace from its beginning (Start in the main window, space bar)."""
+            """Play the selected trace range (or the complete trace)."""
             if self._play_job is not None or not self.can_play():
                 return
-            self.set_time(self.t0)  # playing always starts at the beginning
+            start, _ = self._playback_range()
+            self.set_time(start)
             self._play_last = time.monotonic()
             self._play_job = self.root.after(PLAY_INTERVAL, self._play_step)
             self._playing_changed()
@@ -683,10 +698,11 @@ if tk is not None:
             speed = self.speed()
             moment = float('inf') if speed == float('inf') else self.moment + (now - self._play_last) * speed
             self._play_last = now
-            if moment >= self.t1:
+            _, end = self._playback_range()
+            if moment >= end:
                 self._play_job = None
                 self.stop()
-                self.set_time(self.t1)
+                self.set_time(end)
                 return
             self.set_time(moment)
             self._play_job = self.root.after(PLAY_INTERVAL, self._play_step)
