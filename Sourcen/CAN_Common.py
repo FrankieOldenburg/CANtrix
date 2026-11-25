@@ -60,7 +60,18 @@ def resolve_path(path, base_dir):
 def resource_dir():
     """Folder with README, Screenshots and Bilder: the project folder, in the executable the bundled data."""
     if is_frozen():
-        return getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(sys.executable)))
+        # PyInstaller uses ``_MEIPASS`` for bundled resources, but the exact
+        # value differs between one-file builds and macOS app bundles.  In an
+        # app bundle the data files live in Contents/Resources; some PyInstaller
+        # versions report Contents/Frameworks as _MEIPASS instead.
+        candidates = [getattr(sys, '_MEIPASS', '')]
+        executable_dir = os.path.dirname(os.path.abspath(sys.executable))
+        candidates.append(os.path.normpath(os.path.join(executable_dir, '..', 'Resources')))
+        candidates.append(executable_dir)
+        for candidate in candidates:
+            if candidate and os.path.isdir(os.path.join(candidate, 'Bilder')):
+                return candidate
+        return candidates[0] or executable_dir
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 

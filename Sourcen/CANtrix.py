@@ -457,8 +457,7 @@ if tk is not None:
 
         def _build_body(self):
             theme = self.theme
-            header = theme.header(self.root, 'CANtrix')
-            self._build_toolbar(header)
+            self._build_toolbar()
             theme.footer(self.root, self.status_var)
             # The work area: the status summary fills it; in the docked view it and the windows are panes in it.
             self.area = tk.Frame(self.root, background=C.APP_BG)
@@ -467,29 +466,7 @@ if tk is not None:
             self.status_host = None
             self.status_canvas = self.progress_frame = None
             self.status_rows = []  # (label, value, kind), see render_status
-            self.status_image = None
-            try:
-                self.status_image = tk.PhotoImage(master=self.root, file=BACKGROUND_IMAGE)
-            except tk.TclError:  # missing image: no background
-                pass
-            # Docked view: the background image lies on the work area, behind the panes.
-            self.background = tk.Canvas(self.area, borderwidth=0, highlightthickness=0, background=C.APP_BG)
-            self.background.bind('<Configure>', lambda event: self._draw_background())
             self._build_status()
-            self._update_background()
-
-        def _update_background(self):
-            if self.docked.get():
-                self.background.place(x=0, y=0, relwidth=1.0, relheight=1.0)
-                tk.Misc.lower(self.background)  # (Canvas.lower is for items)
-            else:
-                self.background.place_forget()
-
-        def _draw_background(self):
-            canvas = self.background
-            canvas.delete('all')
-            if self.status_image is not None:
-                canvas.create_image(canvas.winfo_width() // 2, canvas.winfo_height() // 2, image=self.status_image)
 
         def _build_status(self):
             """(Re)build the status summary: a card filling the main window, or a pane in the docked view."""
@@ -507,11 +484,11 @@ if tk is not None:
                 host, _ = self.theme.pane(self.area, tr('Status & Zusammenfassung'))
                 host.pack(fill=tk.BOTH, expand=True)
                 self.status_host = parent = host
-            # The summary is drawn on a canvas, so the background image (transparent PNG) can lie behind it.
             canvas = self.status_canvas = tk.Canvas(parent, height=150, borderwidth=0, highlightthickness=0,
                                                     background=C.SURFACE)
             canvas.pack(fill=tk.BOTH, expand=True)
             canvas.bind('<Configure>', lambda event: self._draw_status())
+            canvas.after_idle(self._draw_status)
             # Progress bars of the files being read, below the summary (shown only while loading).
             self.progress_frame = tk.Frame(parent, background=C.SURFACE)
             if hasattr(self, 'database_entries'):  # not during the first build (render_status follows later)
@@ -554,14 +531,12 @@ if tk is not None:
                     child.refit()
 
         def _draw_status(self):
-            """Background image in the middle, above it the rows of the summary: label and value."""
+            """Draw the rows of the summary."""
             canvas = self.status_canvas
             if canvas is None:
                 return
             canvas.delete('all')
             width = canvas.winfo_width()
-            if self.status_image is not None and not self.docked.get():  # docked: the work area shows it
-                canvas.create_image(width // 2, canvas.winfo_height() // 2, image=self.status_image)
             theme = self.theme
             value_x = 16 + 130  # like the former tab stop of the text
             y = 12
@@ -576,13 +551,11 @@ if tk is not None:
                                           width=max(100, width - value_x - 16))
                 y = canvas.bbox(item)[3] + 6
 
-        def _build_toolbar(self, header):
-            """Icons below the window name in groups: configuration (new, load, save), open database and trace,
-            child windows."""
+        def _build_toolbar(self):
+            """Toolbar with configuration, viewer and recording controls."""
             label = 'Cmd' if self.root.tk.call('tk', 'windowingsystem') == 'aqua' else 'Ctrl'
-            toolbar = tk.Frame(header.master, background=C.SURFACE)
-            # Left edge of the window name: header padding 16 + logo 30 + gap 10.
-            toolbar.pack(side=tk.TOP, fill=tk.X, padx=(56, 16), pady=(0, 10), after=header)
+            toolbar = tk.Frame(self.root, background=C.SURFACE)
+            toolbar.pack(side=tk.TOP, fill=tk.X, padx=16, pady=10)
             save_tip = lambda: (tr('Konfiguration speichern (%s+S)') % label if self.config_path
                                 else tr('Konfiguration speichern unter…'))
             icons = {'database_viewer': draw_database_icon, 'trace_viewer': draw_trace_icon, 'graph_viewer': draw_graph_icon,
@@ -1736,7 +1709,6 @@ if tk is not None:
             if isinstance(self.status_host, FloatingPane):
                 self._remember_pane('status', self.status_host)
             self.settings['docked'] = self.docked.get()
-            self._update_background()
             self._build_status()
 
         def close_windows(self):
@@ -2542,7 +2514,6 @@ if tk is not None:
 
 APP_ICON = os.path.join(resource_dir(), 'Bilder', 'CANtrix-Icon.png')
 WINDOWS_ICON = os.path.join(resource_dir(), 'Bilder', 'CANtrix.ico')
-BACKGROUND_IMAGE = os.path.join(resource_dir(), 'Bilder', 'CANtrix-Hintergrund.png')  # behind "Status & Zusammenfassung"
 SPLASH_IMAGE = os.path.join(resource_dir(), 'Bilder', 'CANtrix-Startbildschirm.png')
 SPLASH_MILLISECONDS = 3000
 
