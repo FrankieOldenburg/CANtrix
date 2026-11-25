@@ -2514,7 +2514,7 @@ if tk is not None:
 
 APP_ICON = os.path.join(resource_dir(), 'Bilder', 'CANtrix-Icon.png')
 WINDOWS_ICON = os.path.join(resource_dir(), 'Bilder', 'CANtrix.ico')
-SPLASH_IMAGE = os.path.join(resource_dir(), 'Bilder', 'CANtrix-Startbildschirm.png')
+SPLASH_IMAGE = os.path.join(resource_dir(), 'Bilder', 'CANtrix Automotive Analyse Splashscreen.png')
 SPLASH_MILLISECONDS = 3000
 
 

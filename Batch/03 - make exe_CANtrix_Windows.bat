@@ -59,7 +59,7 @@ if exist "%PROJECT%\build\pyinstaller" rmdir /s /q "%PROJECT%\build\pyinstaller"
     --add-data "%PROJECT%\README.md;." ^
     --add-data "%PROJECT%\README_en.md;." ^
     --add-data "%PROJECT%\Screenshots;Screenshots" ^
-    --add-data "%PROJECT%\Bilder\CANtrix-Startbildschirm.png;Bilder" ^
+    --add-data "%PROJECT%\Bilder\CANtrix Automotive Analyse Splashscreen.png;Bilder" ^
     --add-data "%PROJECT%\Bilder\CANtrix-Icon.png;Bilder" ^
     --add-data "%PROJECT%\Bilder\CANtrix.ico;Bilder" ^
     --add-data "%PROJECT%\Bilder\CANtrix-Hintergrund.png;Bilder" ^
