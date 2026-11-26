@@ -21,7 +21,7 @@ except ImportError:
     tk = None
 
 from CAN_Common import (C, Theme, apply_appearance, as_whole, combine_databases, decode_text, display, draw_new_icon,
-                        draw_open_icon, draw_save_icon, ecu_names, icon_hue, icon_line, icon_page, initial_geometry, is_big_endian, js_str, normalize_id, ordered_unique, parse_database,
+                        draw_open_icon, draw_save_icon, ecu_names, icon_hue, icon_line, initial_geometry, is_big_endian, js_str, normalize_id, ordered_unique, parse_database,
                         parse_dbc_environment, read_database_bytes, rounded_rect, signal_bit_numbers,
                         window_geometry)
 from CAN_Language import etr
@@ -73,14 +73,6 @@ def draw_save_as_icon(canvas, color):
     canvas.create_rectangle(10, 7, 17, 11, fill=blue, outline=blue, tags=('icon',))
     canvas.create_line(10, 21, 10, 15, 18, 15, 18, 21, **icon_line(blue))
     _plus(canvas, 22, 22)
-
-
-def draw_export_arxml_icon(canvas, color):
-    """Document with angle brackets."""
-    icon_page(canvas, C.MUTED)
-    line = icon_line(icon_hue(5))
-    canvas.create_line(13.5, 14.5, 11, 17, 13.5, 19.5, **line)
-    canvas.create_line(16.5, 14.5, 19, 17, 16.5, 19.5, **line)
 
 
 def _arrow(canvas, direction):
@@ -734,11 +726,10 @@ if tk is not None:
                     ('new', draw_new_icon, etr('New'), self.new_database),
                     ('open', draw_open_icon, etr('Load'), self.open_database),
                     ('save', draw_save_icon, etr('Save'), self.save_all),
-                    ('save_copy', draw_save_as_icon, etr('Save as DBC…'), self.save_copy),
-                    ('export_arxml', draw_export_arxml_icon, etr('Save as ARXML…'), lambda: self.save_copy('arxml')),
+                    ('save_copy', draw_save_as_icon, etr('Save as…'), self.save_copy),
                     ('undo', draw_undo_icon, etr('Undo'), self.undo),
                     ('redo', draw_redo_icon, etr('Redo'), self.redo))):
-                self._icon_button(inner, key, draw, text, command, padx=(12 if index in (2, 5) else 0, 6))
+                self._icon_button(inner, key, draw, text, command, padx=(12 if index in (2, 4) else 0, 6))
             tk.Label(inner, textvariable=self.edit_info, background=C.SURFACE, foreground=C.MUTED,
                      font=self.theme.font_label).pack(side=tk.LEFT, padx=(8, 0))
             tk.Label(inner, textvariable=self.multi_info, background=C.SURFACE, foreground=C.INK,
@@ -1395,9 +1386,7 @@ if tk is not None:
             selection = part is not None and self.parts[part]['editable'] and kind in ('message', 'signal', 'env')
             target = self._default_part()
             dirty = [item['name'] for item in self.parts if self._dirty(item)]
-            export_part = self.parts[part if part is not None else 0] if self.parts else None
             states = {'new': True, 'open': True, 'save': bool(dirty), 'save_copy': bool(self.parts),
-                      'export_arxml': bool(export_part and export_part['messages']),
                       'undo': bool(self.undo_stack), 'redo': bool(self.redo_stack),
                       'new_message': target is not None, 'new_variable': target is not None,
                       'edit': selection, 'duplicate': selection, 'delete': selection,
@@ -1565,23 +1554,27 @@ if tk is not None:
                 return
             self.start_load(paths[0])
 
-        def save_copy(self, format_key='dbc'):
+        def save_copy(self):
             if not self.parts:
                 return
             _, index = self._selected()
             if index is None:
                 index = 0
             part = self.parts[index]
-            extension = '.' + format_key
-            arxml = format_key == 'arxml'
-            label = etr('Save as ARXML…') if arxml else etr('Save as DBC…')
+            file_type = tk.StringVar(master=self.root)
             path = filedialog.asksaveasfilename(
-                parent=self.root, title=label, defaultextension=extension,
+                parent=self.root, title=etr('Save as…'), defaultextension='.dbc',
                 initialdir=os.path.dirname(part['path']) if part['path'] else None,
-                initialfile=os.path.splitext(part['name'])[0] + extension,
-                filetypes=[('AUTOSAR ARXML' if arxml else 'Vector DBC', '*' + extension)])
+                initialfile=os.path.splitext(part['name'])[0] + '.dbc',
+                filetypes=[('Vector DBC', '*.dbc'), ('AUTOSAR ARXML', '*.arxml')],
+                typevariable=file_type)
             if not path:
                 return
+            arxml = file_type.get().startswith('AUTOSAR ARXML')
+            format_key = 'arxml' if arxml else 'dbc'
+            extension = '.' + format_key
+            if not os.path.splitext(path)[1]:
+                path += extension
             if not path.lower().endswith(extension):
                 messagebox.showerror(TITLE, etr('Choose a file name ending in %s.') % extension, parent=self.root)
                 return

@@ -272,8 +272,6 @@ DE = {
     'Load database': 'Datenbasis laden',
     'CAN database': 'CAN-Datenbasis',
     'Save as…': 'Speichern unter…',
-    'Save as DBC…': 'Speichern als DBC…',
-    'Save as ARXML…': 'Speichern als ARXML…',
     'Choose a file name ending in %s.': 'Wähle einen Dateinamen mit der Endung %s.',
     'Choose a different file name from the loaded databases.':
         'Wähle einen anderen Dateinamen als den der geladenen Datenbasen.',
