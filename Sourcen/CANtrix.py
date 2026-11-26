@@ -286,6 +286,7 @@ if tk is not None:
             self.tray_var = tk.BooleanVar(value=False)
             self.tray = None
             self._tray_hidden = []  # windows hidden when the app moved into the tray
+            self._tray_docked = False  # docked view suspended while the app is in the tray
             self.run_var = tk.StringVar(value='stop')  # 'start' while recording or playing
             # Time controls of the Panel Viewer (the Panel Viewer takes these variables over, see open_window).
             self.time_var = tk.StringVar(value='—')
@@ -477,6 +478,9 @@ if tk is not None:
             """Hide all windows and show the icon in the menu bar (macOS) or the system tray (Windows)."""
             if self.tray is not None:
                 return
+            if self.docked.get() and not self._confirm_reopen():
+                self.tray_var.set(False)
+                return
             try:
                 self.tray = CAN_Tray.TrayIcon(self.root, self._tray_items, APP_ICON, WINDOWS_ICON)
             except Exception as error:  # the native icon could not be created
@@ -484,14 +488,33 @@ if tk is not None:
                 messagebox.showerror('CANtrix', str(error), parent=self.root)
                 return
             self.tray_var.set(True)
+            # Every window opens on its own from the tray, so the docked view (panes inside the main window)
+            # is suspended until the tray is left.
+            if self.docked.get():
+                self.docked.set(False)
+                self._tray_docked = self._apply_docked()
             self._tray_hidden = [window for window in CAN_Tray.windows_of(self.root)
                                  if window.wm_state() != 'withdrawn']
             for window in self._tray_hidden:
                 window.withdraw()
 
-        def leave_tray(self):
-            """Remove the icon and show the main window and the windows hidden before again."""
+        def _confirm_reopen(self):
+            """Switching between docked and free windows reopens them: ask before a live recording gets lost."""
+            viewer = self._viewer()
+            if viewer is None or not viewer._live_trace['frames']:
+                return True
+            self.root.deiconify()
+            return messagebox.askokcancel(
+                'CANtrix', tr('Die Fenster werden neu geöffnet, dabei geht die Live-Aufzeichnung verloren. Fortfahren?'),
+                parent=self.root)
+
+        def leave_tray(self, quitting=False):
+            """Remove the icon and show the main window and the windows hidden before again.
+            quitting: the app ends, so the windows are not docked again, only the setting is kept."""
             if self.tray is None:
+                return
+            if self._tray_docked and not quitting and not self._confirm_reopen():
+                self.tray_var.set(True)
                 return
             self.tray.destroy()
             self.tray = None
@@ -503,6 +526,15 @@ if tk is not None:
                 except tk.TclError:
                     pass
             self._tray_hidden = []
+            if self._tray_docked:
+                self._tray_docked = False
+                if quitting:
+                    self.settings['docked'] = True
+                else:
+                    self.root.deiconify()  # the panes need the size of the work area
+                    self.root.update_idletasks()
+                    self.docked.set(True)
+                    self._apply_docked()
             self.show_main_window()
 
         def _tray_items(self):
@@ -518,8 +550,6 @@ if tk is not None:
             return items
 
         def _tray_window(self, key):
-            if self.docked.get():  # the windows are panes in the main window
-                self.show_main_window()
             if key != 'panel_viewer':
                 self.open_window(key)
                 return
@@ -527,9 +557,10 @@ if tk is not None:
                           key=panel_number)
             for other in keys:
                 self.open_window(other)
-            if not keys:  # no panel yet: the file dialog needs a visible parent
-                self.show_main_window()
-                self.open_panel()
+            if not keys:  # no panel yet: an empty Panel Viewer, which is the parent of the file dialog
+                self.open_window('panel_viewer')
+                if 'panel_viewer' in self.windows:
+                    self.open_panel(self.windows['panel_viewer'][0])
 
         def _tray_plugin(self, plugin):
             # Messages of a plugin that cannot start need a visible parent.
@@ -979,9 +1010,9 @@ if tk is not None:
                 self._update_progress()
                 self.take_over({'trace': None})
 
-        def open_panel(self):
+        def open_panel(self, parent=None):
             paths = filedialog.askopenfilenames(
-                parent=self.root, title=tr('Panel öffnen'), initialdir=self._initial_dir(self.panel_path),
+                parent=parent or self.root, title=tr('Panel öffnen'), initialdir=self._initial_dir(self.panel_path),
                 filetypes=[(tr('Vector-Panel'), '*.xvp'), (tr('Alle Dateien'), '*')])
             self.add_panels([os.path.abspath(path) for path in paths])
 
@@ -1830,7 +1861,12 @@ if tk is not None:
         # ------------------------------------------------------------ docked view
 
         def toggle_docked(self):
-            """Menu 'Ansicht > Gedockte Ansicht': open windows are closed and opened again in the other form."""
+            """Menu 'Ansicht > Gedockte Ansicht'."""
+            self._tray_docked = False  # chosen by the user while in the tray: nothing to restore
+            self._apply_docked()
+
+        def _apply_docked(self):
+            """Open windows are closed and opened again in the form of self.docked; False if the user cancelled."""
             states = {}
             for key in list(self.windows):
                 app = self.windows[key][1]
@@ -1841,10 +1877,11 @@ if tk is not None:
             for key in states:
                 if not self.close_window(key):  # e.g. the user cancelled closing the Database Editor
                     self.docked.set(not self.docked.get())
-                    return
+                    return False
             self._docked_changed()
             for key, state in states.items():
                 self.open_window(key, state)
+            return True
 
         def _docked_changed(self):
             """The docked view was switched (no window open): remember it and rebuild the status summary."""
@@ -1891,7 +1928,8 @@ if tk is not None:
             if vector_io and vector_io.get('database'):
                 vector_io['database'] = rel(vector_io['database'])
             # 'database' (first path) keeps the configuration readable for older versions.
-            return {'vector_io': vector_io, 'format': CONFIG_FORMAT, 'version': 1, 'docked': self.docked.get(),
+            return {'vector_io': vector_io, 'format': CONFIG_FORMAT, 'version': 1,
+                    'docked': self.docked.get() or self._tray_docked,
                     'speed': self.speed_var.get(), 'follow_cursor': self.follow_var.get(), 'databases': rel_entries(self.database_entries),
                     'database': rel(self.database_entries[0]['path']) if self.database_entries else None,
                     'traces': rel_entries(self.trace_entries),
@@ -2288,7 +2326,9 @@ if tk is not None:
                 if old_settings.get('show_trace') is False:
                     windows['trace_viewer'] = dict(old, open=False)
             # Docked view and time controls belong to the configuration (older ones: keep the current values).
-            if isinstance(config.get('docked'), bool) and config['docked'] != self.docked.get():
+            if isinstance(config.get('docked'), bool) and self.tray is not None:
+                self._tray_docked = config['docked']  # applied when the tray is left
+            elif isinstance(config.get('docked'), bool) and config['docked'] != self.docked.get():
                 self.docked.set(config['docked'])
                 self._docked_changed()
             if config.get('speed') in SPEEDS:
@@ -2332,7 +2372,7 @@ if tk is not None:
         # ------------------------------------------------------------ closing
 
         def close(self):
-            self.leave_tray()  # questions about unsaved changes need visible windows
+            self.leave_tray(quitting=True)  # questions about unsaved changes need visible windows
             try:
                 if self.root.state() != 'iconic':  # a minimised window has no usable size
                     self.settings['geometry'] = window_geometry(self.root)

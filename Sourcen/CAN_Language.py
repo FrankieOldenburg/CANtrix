@@ -882,6 +882,8 @@ EN = {
     'In den Infobereich (Systemtray)': 'Move to system tray',
     'Menüleiste verlassen': 'Leave menu bar',
     'Infobereich verlassen': 'Leave system tray',
+    'Die Fenster werden neu geöffnet, dabei geht die Live-Aufzeichnung verloren. Fortfahren?':
+        'The windows are opened again and the live recording will be lost. Continue?',
     '%s Elemente · %s verknüpft · %s mit Live-Werten': '%s elements · %s linked · %s with live values',
     '%s Elemente · %s verknüpft · noch keine Live-Daten – Live-Aufzeichnung starten':
         '%s elements · %s linked · no live data yet – start the live recording',
