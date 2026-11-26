@@ -2554,7 +2554,8 @@ if tk is not None:
 APP_ICON = os.path.join(resource_dir(), 'Bilder', 'CANtrix-Icon.png')
 WINDOWS_ICON = os.path.join(resource_dir(), 'Bilder', 'CANtrix.ico')
 SPLASH_IMAGE = os.path.join(resource_dir(), 'Bilder', 'CANtrix Automotive Analyse Splashscreen.png')
-SPLASH_MILLISECONDS = 3000
+SPLASH_MILLISECONDS = 1800
+SPLASH_MAX_SCREEN_FRACTION = 0.50
 
 
 def show_splash(root, path=SPLASH_IMAGE):
@@ -2562,8 +2563,8 @@ def show_splash(root, path=SPLASH_IMAGE):
     try:
         image = tk.PhotoImage(master=root, file=path)
         # Larger than 80 % of the screen: reduce by whole factors.
-        factor = max(1, -(-image.width() // int(root.winfo_screenwidth() * 0.8)),
-                     -(-image.height() // int(root.winfo_screenheight() * 0.8)))
+        factor = max(1, -(-image.width() // int(root.winfo_screenwidth() * SPLASH_MAX_SCREEN_FRACTION)),
+                     -(-image.height() // int(root.winfo_screenheight() * SPLASH_MAX_SCREEN_FRACTION)))
         if factor > 1:
             image = image.subsample(factor)
         splash = tk.Toplevel(root)
