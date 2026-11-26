@@ -492,6 +492,16 @@ class AboutWindow(object):
 
     def __init__(self, parent):
         window = self.window = tk.Toplevel(parent)
+        if window.tk.call('tk', 'windowingsystem') == 'aqua':
+            # Keep the About dialog as its own macOS window instead of allowing automatic tabs.
+            try:
+                window.wm_attributes('-tabbingmode', 'disallowed')
+            except tk.TclError:  # Tk 8.6: use the supported legacy tabbing identifier API.
+                try:
+                    window.tk.call('::tk::unsupported::MacWindowStyle', 'tabbingid', window,
+                                   'CANtrix-about-%s' % str(window))
+                except tk.TclError:
+                    pass
         apply_appearance(window)
         window.title('CANtrix – ' + tr('Über CANtrix'))
         window.resizable(False, False)
@@ -513,6 +523,15 @@ class AboutWindow(object):
                  font=theme.font_text).pack(pady=(8, 0))
         tk.Label(body, text='Version ' + VERSION, background=C.SURFACE, foreground=C.INK,
                  font=theme.font_text).pack(pady=(4, 0))
+        # A Toplevel created while the main window is fullscreen can inherit that state on macOS.
+        # Restore a normal window and lock the content's requested size explicitly.
+        try:
+            window.attributes('-fullscreen', False)
+            window.state('normal')
+        except tk.TclError:
+            pass
+        window.update_idletasks()
+        window.geometry('%dx%d' % (window.winfo_reqwidth(), window.winfo_reqheight()))
         window.bind('<Escape>', lambda event: window.destroy())
 
     def show(self):
