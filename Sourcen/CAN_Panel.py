@@ -84,11 +84,11 @@ def _number(text, default=None):
 
 def parse_symbol(text):
     """SymbolConfiguration: '5;2;db;;Message;Signal;…' (2 = signal) or '5;16;db;;;Variable;…'
-    (16 = environment variable). Returns None without a binding."""
+    (16 or 1 = environment variable). Returns None without a binding."""
     fields = (text or '').split(';')
     if len(fields) < 6 or not fields[5].strip():
         return None
-    kind = {'2': 'signal', '16': 'env'}.get(fields[1].strip(), 'other')
+    kind = {'1': 'env', '2': 'signal', '16': 'env'}.get(fields[1].strip(), 'other')
     return {'kind': kind, 'database': fields[2], 'message': fields[4].strip(), 'name': fields[5].strip()}
 
 
@@ -1180,7 +1180,7 @@ if tk is not None:
                     value = '%s (%s)' % (sample[1], value)
             elif self.live():
                 symbol = control['symbol']
-                value = (tr('nicht live verfügbar') if symbol['kind'] != 'signal'
+                value = (tr('nicht live verfügbar') if symbol['kind'] == 'other'
                          else source.reason if source.reason == tr('nicht in der Datenbasis')
                          else tr('noch keine Live-Daten'))
             else:
