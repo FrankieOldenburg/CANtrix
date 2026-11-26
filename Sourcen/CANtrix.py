@@ -2572,9 +2572,14 @@ def show_splash(root, path=SPLASH_IMAGE):
         splash = tk.Toplevel(root)
         splash.overrideredirect(True)
         splash.configure(background=C.APP_BG)
-        label = tk.Label(splash, image=image, borderwidth=0, highlightthickness=0, background=C.APP_BG)
-        label.image = image  # keep a reference
-        label.pack()
+        canvas = tk.Canvas(splash, width=image.width(), height=image.height(), borderwidth=0,
+                           highlightthickness=0, background=C.APP_BG)
+        canvas.create_image(image.width() // 2, image.height() // 2, image=image)
+        canvas.create_text(image.width() - 24, image.height() - 18, anchor=tk.SE,
+                           text='Version ' + VERSION, fill='#cbd5e1',
+                           font=('Helvetica', 13, 'bold'))
+        canvas.image = image  # keep a reference
+        canvas.pack()
         x = (root.winfo_screenwidth() - image.width()) // 2
         y = (root.winfo_screenheight() - image.height()) // 2
         splash.geometry('+%d+%d' % (x, y))
