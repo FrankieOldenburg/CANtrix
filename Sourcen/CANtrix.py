@@ -1146,6 +1146,7 @@ if tk is not None:
                         sources['panel'] = self.panels[key]
                     app = PanelViewerApp(window, settings=settings, sources=sources, channel=self.channel,
                                          always_fit=self.panel_fit.get())
+                    app.on_open_panels = self.add_panels  # panel buttons
             except Exception as error:
                 (window.pane if docked else window).destroy()
                 messagebox.showerror('CANtrix', str(error), parent=self.root)

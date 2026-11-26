@@ -219,6 +219,8 @@ Wenn sich ein Wert ändert, entsteht eine Zeile (grün, in der Spalte ID "T32", 
 
 Mit "Datei > Panel öffnen…" wird ein Vector-Panel (`.xvp`) geladen und im Panel Viewer angezeigt. Seine Elemente zeigen die Werte der verknüpften Signale und Umgebungsvariablen (z. B. `ev IO_VN1600_1_AIN = 12.44` im Trace) zu einem Zeitpunkt. Der Zeitpunkt wird so gewählt (Abspielen, Zeitschieber und Cursor-Folgen funktionieren auch ohne geladenes Panel; dann bleibt der Panel Viewer geschlossen und das Hauptfenster hält die Zeit, der Trace Viewer folgt ihr):
 
+Panel-Buttons eines Panels (z. B. "config") öffnen beim Anklicken die dort hinterlegten Panels, jedes in einem eigenen Panel-Viewer-Fenster. Die Dateien werden im Ordner des Panels mit dem Button gesucht. Ein bereits geöffnetes Panel kommt nach vorn.
+
 Es können mehrere Panels gleichzeitig geöffnet werden (Mehrfachauswahl im Dateidialog oder "Panel öffnen…" mehrmals): jedes bekommt ein eigenes Panel-Viewer-Fenster und wird in der Konfiguration gespeichert. Alle Panels zeigen dieselbe Zeit; Zeitschieber, Start/Stop und Cursor-Folgen gehören zum ersten (obersten) offenen Panel. Wird ein Panel-Fenster geschlossen, verschwindet sein Panel aus der Konfiguration. Auf der Kommandozeile kann `-p` mehrfach angegeben werden.
 
 - mit dem Zeitschieber im Hauptfenster (daneben die Zeit),

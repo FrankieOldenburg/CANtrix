@@ -9,6 +9,7 @@ Zeitpunkt (Zeitschieber, Abspielen oder Cursor des Trace Viewers) oder live aus 
 
 Unterstützte Elemente: GroupBox, Meter (Zeigerinstrument), NumericUpDown/TextBox (Zahlenanzeige),
 ComboBox (Wertetabelle), LED (Farben aus SwitchValuesVTXml), ProgressBar/TrackBar, StaticText.
+Panel-Buttons (PanelButtonControl) öffnen beim Anklicken die Panels ihrer PanelList.
 Andere Elemente erscheinen als Platzhalter mit ihrem Typ und, wenn verknüpft, ihrem Wert.
 
 Start: python3 CAN_Panel.py [PANEL] [-d DATENBASIS] [-t TRACE] (normalerweise über CANtrix.py)
@@ -26,7 +27,7 @@ import xml.etree.ElementTree as ET
 
 try:
     import tkinter as tk
-    from tkinter import ttk
+    from tkinter import messagebox, ttk
 except ImportError:
     tk = None
 
@@ -111,6 +112,27 @@ def parse_switch_values(props):
     return sorted(states, key=lambda state: state[0])
 
 
+def parse_panel_list(text):
+    """PanelList of a panel button, e.g. '1;1;FBD6 - IPBasis.xvp' -> ['FBD6 - IPBasis.xvp']."""
+    return [field.strip() for field in (text or '').split(';') if field.strip().lower().endswith(PANEL_TYPES)]
+
+
+def panel_files(panel, names):
+    """Paths of the panels named by a panel button, relative to the folder of the panel with the button.
+    A path of another computer that does not exist falls back to the file name in that folder."""
+    folder = os.path.dirname(os.path.abspath(panel.get('path') or ''))
+    paths = []
+    for name in names:
+        name = name.replace('\\', '/')
+        path = os.path.normpath(os.path.join(folder, name))
+        if not os.path.isfile(path):
+            beside = os.path.join(folder, name.rsplit('/', 1)[-1])
+            if os.path.isfile(beside):
+                path = beside
+        paths.append(path)
+    return paths
+
+
 def _parse_object(element, origin, depth, controls, tabs=()):
     type_name = element.get('Type', '').split(',')[0].rsplit('.', 1)[-1]
     props = {}
@@ -131,6 +153,8 @@ def _parse_object(element, origin, depth, controls, tabs=()):
         control['states'] = parse_switch_values(props)
     if control['kind'] == 'tab':
         control['pages'] = []
+    if type_name == 'PanelButtonControl':
+        control['panels'] = parse_panel_list(props.get('PanelList'))
     controls.append(control)
     for child in element:
         if child.tag == 'Object':
@@ -407,6 +431,8 @@ if tk is not None:
             self._play_last = None
             self.on_time_changed = None  # callback(): time or range changed (time slider in the main window)
             self.attach_menu = None  # callback(window), set by CANtrix.py
+            self.on_open_panels = None  # callback(paths): a panel button was clicked, set by CANtrix.py
+            self.child_panels = {}  # path -> (window, app) opened by panel buttons without CANtrix.py
 
             self.theme = Theme(root)
             self.footer = tk.StringVar()
@@ -881,6 +907,12 @@ if tk is not None:
             if not self.panel:
                 return
             x, y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
+            button = self.control_at(x, y)
+            if button is not None and self.panel['controls'][button].get('panels'):
+                names = self.panel['controls'][button]['panels']
+                # After the click was handled: otherwise a docked view raises this pane over the opened one.
+                self.root.after(50, lambda: self.open_panels(names))
+                return
             for x0, y0, x1, y1, index in self.boxes:
                 control = self.panel['controls'][index]
                 if control['kind'] != 'tab' or not (x0 <= x <= x1 and y0 <= y <= y0 + 22 * self.scale):
@@ -890,6 +922,41 @@ if tk is not None:
                         self.tab_pages[control['name']] = number
                         self.render()
                         return
+
+        def open_panels(self, names):
+            """Open the panels of a panel button."""
+            paths = panel_files(self.panel, names)
+            missing = [path for path in paths if not os.path.isfile(path)]
+            if missing:
+                messagebox.showerror('CAN Panel Viewer', tr('Nicht gefunden:\n%s') % '\n'.join(missing),
+                                     parent=self.root.winfo_toplevel())
+            paths = [path for path in paths if path not in missing]
+            if not paths:
+                return
+            if self.on_open_panels is not None:
+                self.on_open_panels(paths)
+                return
+            for path in paths:
+                self._open_child(path)
+
+        def _open_child(self, path):
+            """Without CANtrix.py: show the panel in a window of its own."""
+            window, app = self.child_panels.get(path, (None, None))
+            if window is not None and window.winfo_exists():
+                window.deiconify()
+                window.lift()
+                return
+            try:
+                panel = read_panel(path)
+            except (OSError, ValueError) as error:
+                messagebox.showerror('CAN Panel Viewer', str(error), parent=self.root.winfo_toplevel())
+                return
+            window = tk.Toplevel(self.root)
+            apply_appearance(window)
+            app = PanelViewerApp(window, sources={'panel': panel, 'database': self.database, 'trace': self.trace},
+                                 channel=self.channel)
+            app.child_panels = self.child_panels  # one window per panel file
+            self.child_panels[path] = (window, app)
 
         def _value(self, sample):
             return sample[0] if sample is not None else None
@@ -1076,18 +1143,21 @@ if tk is not None:
 
         # ------------------------------------------------------------ mouse
 
-        def on_motion(self, event):
-            x, y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
-            found = None
+        def control_at(self, x, y):
+            """Index of the element at canvas position (x, y), ignoring groups and tabs; None without one."""
             for x0, y0, x1, y1, index in reversed(self.boxes):  # topmost (last drawn) first
                 if x0 <= x <= x1 and y0 <= y <= y1 and self.panel['controls'][index]['kind'] not in ('group', 'tab', 'page'):
-                    found = index
-                    break
-            self.set_hover(found)
+                    return index
+            return None
+
+        def on_motion(self, event):
+            self.set_hover(self.control_at(self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)))
 
         def set_hover(self, index):
             if index != self.hover:
                 self.hover = index
+                opens = index is not None and self.panel['controls'][index].get('panels')
+                self.canvas.configure(cursor='hand2' if opens else '')
                 self.show_hover()
 
         def show_hover(self):
@@ -1097,6 +1167,9 @@ if tk is not None:
                 return
             control = self.panel['controls'][self.hover]
             source = self.sources.get(self.hover)
+            if control.get('panels'):
+                set_text(self.footer, '%s · öffnet %s', control['name'], ', '.join(control['panels']))
+                return
             if source is None:
                 set_text(self.footer, '%s · nicht verknüpft', control['name'])
                 return

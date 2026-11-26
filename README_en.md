@@ -217,6 +217,8 @@ When a value changes, a row is created (green, "T32" in the column ID, the value
 
 "File > Open panel…" loads a Vector panel (`.xvp`) and shows it in the Panel Viewer. Its elements show the values of the linked signals and environment variables (e.g. `ev IO_VN1600_1_AIN = 12.44` in the trace) at one point in time. The point in time is chosen (playing, the time slider and cursor following also work without a loaded panel; then the Panel Viewer stays closed, the main window keeps the time and the Trace Viewer follows it):
 
+Clicking a panel button (e.g. "config") opens the panels it refers to, each in its own Panel Viewer window. The files are looked up in the folder of the panel with the button. A panel that is already open is brought to the front.
+
 Several panels can be open at the same time (multiple selection in the file dialog, or "Open panel…" several times): each gets its own Panel Viewer window and is saved in the configuration. All panels show the same time; the time slider, Start/Stop and cursor following belong to the first open panel. Closing a panel window removes its panel from the configuration. On the command line `-p` can be given several times.
 
 - with the time slider in the main window (the time is next to it),

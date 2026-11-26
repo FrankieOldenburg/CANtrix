@@ -877,6 +877,7 @@ EN = {
     'Kein Panel geladen': 'No panel loaded',
     '%s Elemente · %s verknüpft · %s mit Werten im Trace': '%s elements · %s linked · %s with values in the trace',
     '%s · nicht verknüpft': '%s · not linked',
+    '%s · öffnet %s': '%s · opens %s',
     '%s Elemente · %s verknüpft · %s mit Live-Werten': '%s elements · %s linked · %s with live values',
     '%s Elemente · %s verknüpft · noch keine Live-Daten – Live-Aufzeichnung starten':
         '%s elements · %s linked · no live data yet – start the live recording',
