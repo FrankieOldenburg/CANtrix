@@ -2016,7 +2016,7 @@ if tk is not None:
             if self.about is not None and self.about.window.winfo_exists():
                 self.about.show()
                 return
-            self.about = AboutWindow(self.root, self.attach_menu)
+            self.about = AboutWindow(self.root)
 
         def configure_plugins(self):
             if self.plugin_config is not None and self.plugin_config.window.winfo_exists():
@@ -2232,6 +2232,8 @@ if tk is not None:
             try:
                 if self.root.state() != 'iconic':  # a minimised window has no usable size
                     self.settings['geometry'] = window_geometry(self.root)
+                if isinstance(self.status_host, FloatingPane):
+                    self._remember_pane('status', self.status_host)
             except tk.TclError:
                 pass
             if not self.close_windows():

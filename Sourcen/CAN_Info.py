@@ -490,7 +490,7 @@ class InfoWindow(object):
 class AboutWindow(object):
     """Window 'Über CANtrix': program icon, copyright and version."""
 
-    def __init__(self, parent, attach_menu=None):
+    def __init__(self, parent):
         window = self.window = tk.Toplevel(parent)
         apply_appearance(window)
         window.title('CANtrix – ' + tr('Über CANtrix'))
@@ -514,8 +514,6 @@ class AboutWindow(object):
         tk.Label(body, text='Version ' + VERSION, background=C.SURFACE, foreground=C.INK,
                  font=theme.font_text).pack(pady=(4, 0))
         window.bind('<Escape>', lambda event: window.destroy())
-        if attach_menu is not None:
-            attach_menu(window)
 
     def show(self):
         self.window.deiconify()

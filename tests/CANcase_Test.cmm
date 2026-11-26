@@ -1,0 +1,15 @@
+// T32 Wed Nov 25 11:34:45 2026
+
+B::
+
+WinPOS 0.0 30.929 111. 11. 0. 0. W001
+Var.Watch
+
+Var.AddWatch mUwbMwConf_Control_TxRangingCtrl_st
+Var.AddWatch mUwbMwConf_Control_RxRangingCtrl_st
+Var.AddWatch mTimeKeepAlive1s_u16
+Var.AddWatch mSessionStoredData_t[0].StartTime_u64
+Var.AddWatch mUwbStatus_st.externalTemperature_f32
+
+
+ENDDO
