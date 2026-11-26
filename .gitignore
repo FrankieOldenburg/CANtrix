@@ -147,3 +147,21 @@ Traces/Tesla/2026-04-01 06.32.41 AM.asc
 
 # Lokale Build-Kopien aus der Umbenennung
 /.legacy-builds/
+Plugins/FBD6 Device Projection/localization_ipb.py
+Plugins/FBD6 Device Projection/BMW E90/BMW E90.bin
+Plugins/FBD6 Device Projection/BMW E90/BMW E90.blend
+Plugins/FBD6 Device Projection/BMW E90/BMW E90.gltf
+Plugins/FBD6 Device Projection/BMW E90/BMW_E90_rear.png
+Plugins/FBD6 Device Projection/BMW E90/BMW_E90_render.png
+Plugins/FBD6 Device Projection/BMW E90/BMW_E90_side.png
+Plugins/FBD6 Device Projection/BMW E90/create_bmw_e90.py
+Plugins/FBD6 Device Projection/BMW E90/model-info.json
+Plugins/FBD6 Device Projection/BMW i3/bmw_e90_model.py
+Plugins/FBD6 Device Projection/BMW i3/BMW_E90.glb
+Plugins/FBD6 Device Projection/BMW i3/BMW_E90.mtl
+Plugins/FBD6 Device Projection/BMW i3/BMW_E90.obj
+Plugins/FBD6 Device Projection/BMW i3/Vorschau.png
+Plugins/FBD6 Device Projection/Karmann Ghia/Karmann.bin
+Plugins/FBD6 Device Projection/Karmann Ghia/Karmann.gltf
+Traces/BMW/live_localization.html
+Traces/BMW/TestTrace2_localization.html
