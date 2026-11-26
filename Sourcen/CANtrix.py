@@ -464,9 +464,14 @@ if tk is not None:
             self.area = tk.Frame(self.root, background=C.APP_BG)
             self.area.pack(fill=tk.BOTH, expand=True, padx=12, pady=12)
             self.area.bind('<Configure>', lambda event: self._refit_panes())
+            self.watermark_canvas = tk.Canvas(self.area, borderwidth=0, highlightthickness=0,
+                                              background=C.APP_BG)
+            self.watermark_canvas.place(relwidth=1, relheight=1)
+            self.watermark_canvas.bind('<Configure>', lambda event: self._draw_watermark())
             self.status_host = None
             self.status_canvas = self.progress_frame = None
             self.status_rows = []  # (label, value, kind), see render_status
+            self._draw_watermark()
             self._build_status()
 
         def _build_status(self):
@@ -551,6 +556,15 @@ if tk is not None:
                 item = canvas.create_text(value_x, y, anchor=tk.NW, text=value, fill=color, font=theme.font_mono,
                                           width=max(100, width - value_x - 16))
                 y = canvas.bbox(item)[3] + 6
+
+        def _draw_watermark(self):
+            """Draw the subtle name behind the windows on the main work area."""
+            canvas = self.watermark_canvas
+            if canvas is None:
+                return
+            canvas.delete('all')
+            canvas.create_text(max(24, canvas.winfo_width() - 28), max(24, canvas.winfo_height() - 24),
+                               anchor=tk.SE, text='CANtrix', fill=C.LINE_STRONG, font=self.theme.font_brand)
 
         def _build_toolbar(self):
             """Toolbar with configuration, viewer and recording controls."""
@@ -1546,6 +1560,7 @@ if tk is not None:
             """Menu 'Dark Mode': switch all windows; the choice is remembered in ~/.cantrix.json."""
             dark = self.dark_var.get()
             set_dark_mode(self.root, dark)
+            self._draw_watermark()
             self.settings['dark_mode'] = dark
             for _, app in self.windows.values():
                 redraw = getattr(app, 'theme_changed', None)
