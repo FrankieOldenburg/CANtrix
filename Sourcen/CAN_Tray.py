@@ -17,13 +17,15 @@ POLL_MILLISECONDS = 100
 
 
 class TrayIcon(object):
-    """Icon with a menu. items() returns the entries [(label, command), None (separator), …]; it is asked
-    regularly, so the menu follows the plugins and the language. The Tk event loop of root runs the commands."""
+    """Icon with a menu. items() returns the entries [(label, command), None (separator), …]; a command may
+    be a list of entries (submenu), a third element {'enabled': bool, 'checked': bool} sets the state. It is
+    asked regularly, so the menu follows the plugins, the language and the state. The Tk event loop of root
+    runs the commands."""
 
     def __init__(self, root, items, icon_png, icon_ico, tooltip='CANtrix'):
         self.root, self.items = root, items
         self.picked = collections.deque()  # indices of clicked entries (filled by the native callback)
-        self.labels = None
+        self.menu = None  # tree as built, see menu_tree
         self.commands = []
         backend = _MacStatusItem if sys.platform == 'darwin' else _WindowsTrayIcon
         self.native = backend(self._pick, icon_png if sys.platform == 'darwin' else icon_ico, tooltip)
@@ -37,12 +39,12 @@ class TrayIcon(object):
 
     def update(self):
         """Rebuild the menu if the entries changed."""
-        entries = self.items()
-        self.commands = [entry[1] if entry else None for entry in entries]
-        labels = [entry[0] if entry else None for entry in entries]
-        if labels != self.labels:
-            self.labels = labels
-            self.native.set_menu(labels)
+        commands = []
+        menu = menu_tree(self.items(), commands)
+        self.commands = commands
+        if menu != self.menu:
+            self.menu = menu
+            self.native.set_menu(menu)
 
     def _poll(self):
         self._job = self.root.after(POLL_MILLISECONDS, self._poll)  # first: a command may open a modal dialog
@@ -59,6 +61,25 @@ class TrayIcon(object):
             self._job = None
         self.picked.clear()
         self.native.destroy()
+
+
+def menu_tree(entries, commands):
+    """Menu without callables: None (separator) or (label, index of the command or list of entries, enabled,
+    checked). The commands are appended to commands."""
+    tree = []
+    for entry in entries:
+        if entry is None:
+            tree.append(None)
+            continue
+        label, command = entry[0], entry[1]
+        state = entry[2] if len(entry) > 2 else {}
+        if isinstance(command, list):
+            target = menu_tree(command, commands)
+        else:
+            target = len(commands)
+            commands.append(command)
+        tree.append((label, target, bool(state.get('enabled', True)), bool(state.get('checked'))))
+    return tree
 
 
 def windows_of(widget):
@@ -154,20 +175,34 @@ class _MacStatusItem(object):
             _mac_target_class = new
         return _mac_target_class
 
-    def set_menu(self, labels):
-        menu = self.send(self.send(self.cls('NSMenu'), 'alloc'), 'init')
-        for index, label in enumerate(labels):
-            if label is None:
-                self.send(menu, 'addItem:', self.send(self.cls('NSMenuItem'), 'separatorItem'), restype=None)
-                continue
-            entry = self.send(self.send(self.cls('NSMenuItem'), 'alloc'), 'initWithTitle:action:keyEquivalent:',
-                              self.string(label), self.sel('pick:'), self.string(''))
-            self.send(entry, 'setTarget:', self.target, restype=None)
-            self.send(entry, 'setTag:', (ctypes.c_long, index), restype=None)
-            self.send(menu, 'addItem:', entry, restype=None)
-            self.send(entry, 'release', restype=None)
+    def set_menu(self, tree):
+        menu = self._build_menu(tree)
         self.send(self.item, 'setMenu:', menu, restype=None)
         self.send(menu, 'release', restype=None)
+
+    def _build_menu(self, tree):
+        menu = self.send(self.send(self.cls('NSMenu'), 'alloc'), 'init')
+        self.send(menu, 'setAutoenablesItems:', (ctypes.c_bool, False), restype=None)  # enabled as given
+        for node in tree:
+            if node is None:
+                self.send(menu, 'addItem:', self.send(self.cls('NSMenuItem'), 'separatorItem'), restype=None)
+                continue
+            label, target, enabled, checked = node
+            submenu = isinstance(target, list)
+            entry = self.send(self.send(self.cls('NSMenuItem'), 'alloc'), 'initWithTitle:action:keyEquivalent:',
+                              self.string(label), None if submenu else self.sel('pick:'), self.string(''))
+            if submenu:
+                child = self._build_menu(target)
+                self.send(entry, 'setSubmenu:', child, restype=None)
+                self.send(child, 'release', restype=None)
+            else:
+                self.send(entry, 'setTarget:', self.target, restype=None)
+                self.send(entry, 'setTag:', (ctypes.c_long, target), restype=None)
+            self.send(entry, 'setEnabled:', (ctypes.c_bool, enabled), restype=None)
+            self.send(entry, 'setState:', (ctypes.c_long, int(checked)), restype=None)
+            self.send(menu, 'addItem:', entry, restype=None)
+            self.send(entry, 'release', restype=None)
+        return menu
 
     def show_in_dock(self, show):
         """Without a visible window the app lives in the menu bar only; with one it has its Dock icon and
@@ -200,6 +235,7 @@ WM_TRAY = 0x8000 + 1  # WM_APP + 1: messages of the tray icon
 NIM_ADD, NIM_DELETE = 0, 2
 NIF_MESSAGE, NIF_ICON, NIF_TIP = 1, 2, 4
 MF_STRING, MF_SEPARATOR = 0x0000, 0x0800
+MF_GRAYED, MF_CHECKED, MF_POPUP = 0x0001, 0x0008, 0x0010
 TPM_RIGHTBUTTON, TPM_NONOTIFY, TPM_RETURNCMD = 0x0002, 0x0080, 0x0100
 
 
@@ -208,7 +244,7 @@ class _WindowsTrayIcon(object):
 
     def __init__(self, pick, icon_path, tooltip):
         self.pick, self.icon_path, self.tooltip = pick, icon_path, tooltip
-        self.labels = []
+        self.menu = []
         self.hwnd = None
         self.error = None
         ready = threading.Event()
@@ -218,8 +254,8 @@ class _WindowsTrayIcon(object):
         if self.hwnd is None or self.error:
             raise OSError(self.error or 'Shell_NotifyIcon')
 
-    def set_menu(self, labels):
-        self.labels = list(labels)  # read by the thread when the menu opens
+    def set_menu(self, tree):
+        self.menu = tree  # replaced as a whole; read by the thread when the menu opens
 
     def show_in_dock(self, show):
         pass  # the taskbar follows the visible windows by itself
@@ -347,20 +383,31 @@ class _WindowsTrayIcon(object):
             self.shell32.Shell_NotifyIconW(NIM_ADD, ctypes.byref(self.data))
         return self.user32.DefWindowProcW(hwnd, message, wparam, lparam)
 
-    def _popup(self, hwnd):
+    def _build_menu(self, tree):
         user32 = self.user32
         menu = user32.CreatePopupMenu()
-        for index, label in enumerate(self.labels):
-            if label is None:
+        for node in tree:
+            if node is None:
                 user32.AppendMenuW(menu, MF_SEPARATOR, 0, None)
+                continue
+            label, target, enabled, checked = node
+            flags = MF_STRING | (0 if enabled else MF_GRAYED) | (MF_CHECKED if checked else 0)
+            if isinstance(target, list):
+                flags, ident = flags | MF_POPUP, self._build_menu(target)
             else:
-                user32.AppendMenuW(menu, MF_STRING, index + 1, label.replace('&', '&&'))  # 0 means "nothing"
+                ident = target + 1  # 0 means "nothing picked"
+            user32.AppendMenuW(menu, flags, ident, label.replace('&', '&&'))
+        return menu
+
+    def _popup(self, hwnd):
+        user32 = self.user32
+        menu = self._build_menu(self.menu)
         point = self.wintypes.POINT()
         user32.GetCursorPos(ctypes.byref(point))
         user32.SetForegroundWindow(hwnd)  # otherwise the menu does not close on a click outside
         picked = user32.TrackPopupMenu(menu, TPM_RIGHTBUTTON | TPM_NONOTIFY | TPM_RETURNCMD, point.x, point.y, 0,
                                        hwnd, None)
         user32.PostMessageW(hwnd, WM_NULL, 0, 0)
-        user32.DestroyMenu(menu)
+        user32.DestroyMenu(menu)  # with its submenus
         if picked:
             self.pick(picked - 1)

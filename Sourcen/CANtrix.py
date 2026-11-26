@@ -27,7 +27,7 @@ try:
 except ImportError:
     tk = None
 
-from CAN_Common import (C, FloatingPane, MessageIndex, Theme, apply_appearance, draw_new_icon, draw_open_icon, draw_save_icon,
+from CAN_Common import (attach_dialog, C, FloatingPane, MessageIndex, Theme, apply_appearance, draw_new_icon, draw_open_icon, draw_save_icon,
                         icon_hue, icon_line, icon_page, initial_geometry, is_dark_mode, load_settings, program_dir, relative_path, resolve_path, resource_dir, save_settings, set_dark_mode, window_geometry)
 from CAN_Generator import normalize_entries
 from CAN_Info import (VERSION, AboutWindow, InfoWindow, can_self_update, check_update, download_source,
@@ -288,6 +288,7 @@ if tk is not None:
             self._tray_hidden = []  # windows hidden when the app moved into the tray
             self._tray_docked = False  # docked view suspended while the app is in the tray
             self.run_var = tk.StringVar(value='stop')  # 'start' while recording or playing
+            self._can_start = False
             # Time controls of the Panel Viewer (the Panel Viewer takes these variables over, see open_window).
             self.time_var = tk.StringVar(value='—')
             self.speed_var = tk.StringVar(value=self.settings.get('speed') if self.settings.get('speed') in SPEEDS
@@ -544,10 +545,35 @@ if tk is not None:
                 items.append(None)
                 items.extend((plugin['name'], lambda plugin=plugin: self._tray_plugin(plugin))
                              for plugin in self.plugins)
+            running = self.run_var.get() == 'start'
+            can_start = not running and self._can_start
+            source = self.source.get()
+            items.extend((None, ('Start', self.start_recording, {'enabled': can_start}),
+                          ('Stop', self.stop_recording, {'enabled': running}),
+                          ('Online', lambda: self._tray_source('live'), {'checked': source == 'live'}),
+                          ('Offline', lambda: self._tray_source('trace'), {'checked': source != 'live'})))
+            settings = (('CAN Trace Viewer', self.choose_channel), ('CAN Trace Recorder', self.configure_recorder),
+                        ('Vector I/O Configuration', self.configure_vector_io), ('TRACE32', self.configure_debugger))
+            items.extend((None, (tr('Einstellungen'),
+                                 [(tr(label), lambda command=command: self._tray_dialog(command))
+                                  for label, command in settings])))
             aqua = self.root.tk.call('tk', 'windowingsystem') == 'aqua'
             items.extend((None, (tr('Menüleiste verlassen') if aqua else tr('Infobereich verlassen'), self.leave_tray),
                           (tr('Beenden'), self.close)))
             return items
+
+        def _tray_source(self, value):
+            if value != self.source.get():
+                self.source.set(value)
+                self.change_source()
+
+        def _tray_dialog(self, command):
+            """Settings dialog from the tray menu; only one at a time (the menu stays usable while it is open)."""
+            dialog = self.root.grab_current()
+            if dialog is not None:
+                dialog.winfo_toplevel().lift()
+                return
+            command()
 
         def _tray_window(self, key):
             if key != 'panel_viewer':
@@ -1586,6 +1612,7 @@ if tk is not None:
                 # Without a Panel Viewer the main window plays (a trace is enough, a panel is not needed).
                 can_start = not running and (panel.can_play() if panel is not None
                                              else self._local_range()[1] > self._local_range()[0])
+            self._can_start = can_start  # also for the tray menu
             try:
                 # The time controls act on the Panel Viewer in the state Trace.
                 active = self.source.get() != 'live' and (bool(self._panel_apps()) or bool(self.trace))
@@ -2402,7 +2429,7 @@ if tk is not None:
             apply_appearance(window)
             window.title('CAN Trace Recorder')
             window.resizable(False, False)
-            window.transient(parent)
+            attach_dialog(window, parent)
             theme = Theme(window)
             card, _ = theme.pane(window, tr('Verbindung'))
             card.pack(fill=tk.BOTH, expand=True, padx=12, pady=12)
@@ -2663,7 +2690,7 @@ if tk is not None:
             apply_appearance(window)
             window.title(tr('CAN-Kanal auswählen'))
             window.resizable(False, False)
-            window.transient(parent)
+            attach_dialog(window, parent)
             theme = Theme(window)
             card, _ = theme.pane(window, tr('CAN-Kanal'))
             card.pack(fill=tk.BOTH, expand=True, padx=12, pady=12)

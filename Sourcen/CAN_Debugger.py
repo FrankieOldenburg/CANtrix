@@ -10,7 +10,7 @@ import time
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from CAN_Common import C, decode_text
+from CAN_Common import attach_dialog, C, decode_text
 from CAN_DbcEditor import write_generated_dbc
 from CAN_Language import tr
 
@@ -146,7 +146,7 @@ class DebuggerDialog(object):
         window = self.window = tk.Toplevel(parent)
         window.title(tr('TRACE32-Variablen'))
         window.configure(background=C.APP_BG)
-        window.transient(parent)
+        attach_dialog(window, parent)
         body = ttk.Frame(window, padding=16)
         body.pack(fill=tk.BOTH, expand=True)
         self.host = tk.StringVar(value=settings['host'])

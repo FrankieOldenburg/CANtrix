@@ -7,7 +7,7 @@ import threading
 import tkinter as tk
 from tkinter import ttk
 
-from CAN_Common import Theme
+from CAN_Common import attach_dialog, Theme
 from CAN_DbcEditor import write_generated_dbc
 from CAN_Language import set_text, tr
 
@@ -92,7 +92,7 @@ class VectorIODialog:
         config = normalize_vector_io(config)
         window = self.window = tk.Toplevel(parent)
         window.title(tr('Vector I/O Configuration'))
-        window.transient(parent)
+        attach_dialog(window, parent)
         window.resizable(False, False)
         theme = Theme(window)
         theme.header(window, tr('Vector I/O Configuration'))

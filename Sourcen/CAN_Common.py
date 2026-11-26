@@ -349,6 +349,23 @@ def window_geometry(root):
     return '%dx%d+%d+%d' % (root.winfo_width(), root.winfo_height(), root.winfo_x(), root.winfo_y())
 
 
+def attach_dialog(window, parent):
+    """Keep a dialog above its parent window. A hidden parent (app in the menu bar / system tray) would
+    hide the dialog with it: then the dialog stays on its own, in the middle of the screen."""
+    if parent.winfo_toplevel().wm_state() != 'withdrawn':
+        window.transient(parent)
+        return
+
+    def center():
+        window.update_idletasks()
+        x = (window.winfo_screenwidth() - window.winfo_reqwidth()) // 2
+        y = (window.winfo_screenheight() - window.winfo_reqheight()) // 3
+        window.geometry('+%d+%d' % (max(0, x), max(0, y)))
+        window.lift()
+        window.focus_force()
+    window.after(20, center)  # after the dialog placed itself relative to the parent
+
+
 def apply_appearance(window):
     """Light or dark window frame on macOS, matching the current palette (Tk 8.6.10+)."""
     if window.tk.call('tk', 'windowingsystem') == 'aqua':
