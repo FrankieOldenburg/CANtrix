@@ -878,6 +878,10 @@ EN = {
     '%s Elemente · %s verknüpft · %s mit Werten im Trace': '%s elements · %s linked · %s with values in the trace',
     '%s · nicht verknüpft': '%s · not linked',
     '%s · öffnet %s': '%s · opens %s',
+    'In die Menüleiste': 'Move to menu bar',
+    'In den Infobereich (Systemtray)': 'Move to system tray',
+    'Menüleiste verlassen': 'Leave menu bar',
+    'Infobereich verlassen': 'Leave system tray',
     '%s Elemente · %s verknüpft · %s mit Live-Werten': '%s elements · %s linked · %s with live values',
     '%s Elemente · %s verknüpft · noch keine Live-Daten – Live-Aufzeichnung starten':
         '%s elements · %s linked · no live data yet – start the live recording',

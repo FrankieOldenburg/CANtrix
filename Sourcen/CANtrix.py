@@ -32,6 +32,7 @@ from CAN_Common import (C, FloatingPane, MessageIndex, Theme, apply_appearance, 
 from CAN_Generator import normalize_entries
 from CAN_Info import (VERSION, AboutWindow, InfoWindow, can_self_update, check_update, download_source,
                       install_update, open_file, remove_old_updates, restart_program)
+import CAN_Tray
 from CAN_Panel import DEFAULT_SPEED, SPEEDS, bound_count, read_panel
 from CAN_Language import LANGUAGES, keep_language, language, load_language, set_language, set_text, tr
 from CAN_Plugins import PluginConfigWindow, PluginRun, build_command, normalize_plugins, script_path
@@ -281,6 +282,10 @@ if tk is not None:
             self.settings.pop('source', None)  # remembered by older versions
             self.panel_fit = tk.BooleanVar(value=self.settings.get('panel_fit') is not False)  # panels always at their best size
             self.docked = tk.BooleanVar(value=self.settings.get('docked') is True)  # windows as tabs in this window
+            # Menu bar (macOS) / system tray (Windows): TrayIcon while the app lives there; not remembered
+            self.tray_var = tk.BooleanVar(value=False)
+            self.tray = None
+            self._tray_hidden = []  # windows hidden when the app moved into the tray
             self.run_var = tk.StringVar(value='stop')  # 'start' while recording or playing
             # Time controls of the Panel Viewer (the Panel Viewer takes these variables over, see open_window).
             self.time_var = tk.StringVar(value='—')
@@ -312,7 +317,7 @@ if tk is not None:
             if size and int(size.group(1)) < root.winfo_reqwidth():
                 root.geometry('%dx%s' % (root.winfo_reqwidth(), size.group(2)))
             self.render_status()
-            root.protocol('WM_DELETE_WINDOW', self.close)
+            root.protocol('WM_DELETE_WINDOW', self._main_window_closed)
             if root.tk.call('tk', 'windowingsystem') == 'aqua':
                 root.createcommand('tk::mac::Quit', self.close)
             self._poll_job = root.after(60, self.poll_results)
@@ -421,6 +426,10 @@ if tk is not None:
                 language_menu.add_checkbutton(label=name, variable=self.language_vars[code],
                                               command=lambda code=code: self.change_language(code))
             window_menu.add_cascade(label=tr('Sprache'), menu=language_menu)
+            if CAN_Tray.AVAILABLE:
+                window_menu.add_separator()
+                label_text = tr('In die Menüleiste') if aqua else tr('In den Infobereich (Systemtray)')
+                window_menu.add_checkbutton(label=label_text, variable=self.tray_var, command=self.toggle_tray)
             menubar.add_cascade(label=tr('Ansicht'), menu=window_menu)
 
             self.plugin_menu = tk.Menu(menubar, tearoff=False)
@@ -455,6 +464,85 @@ if tk is not None:
             self.root.deiconify()
             self.root.lift()
             self.root.focus_force()
+
+        # ------------------------------------------------------------ menu bar / system tray
+
+        def toggle_tray(self):
+            if self.tray_var.get():
+                self.enter_tray()
+            else:
+                self.leave_tray()
+
+        def enter_tray(self):
+            """Hide all windows and show the icon in the menu bar (macOS) or the system tray (Windows)."""
+            if self.tray is not None:
+                return
+            try:
+                self.tray = CAN_Tray.TrayIcon(self.root, self._tray_items, APP_ICON, WINDOWS_ICON)
+            except Exception as error:  # the native icon could not be created
+                self.tray_var.set(False)
+                messagebox.showerror('CANtrix', str(error), parent=self.root)
+                return
+            self.tray_var.set(True)
+            self._tray_hidden = [window for window in CAN_Tray.windows_of(self.root)
+                                 if window.wm_state() != 'withdrawn']
+            for window in self._tray_hidden:
+                window.withdraw()
+
+        def leave_tray(self):
+            """Remove the icon and show the main window and the windows hidden before again."""
+            if self.tray is None:
+                return
+            self.tray.destroy()
+            self.tray = None
+            self.tray_var.set(False)
+            for window in self._tray_hidden:
+                try:
+                    if window.winfo_exists() and window.wm_state() == 'withdrawn':
+                        window.deiconify()
+                except tk.TclError:
+                    pass
+            self._tray_hidden = []
+            self.show_main_window()
+
+        def _tray_items(self):
+            items = [(tr('Hauptfenster'), self.show_main_window), None]
+            items.extend((title, lambda key=key: self._tray_window(key)) for key, title in WINDOWS)
+            if self.plugins:
+                items.append(None)
+                items.extend((plugin['name'], lambda plugin=plugin: self._tray_plugin(plugin))
+                             for plugin in self.plugins)
+            aqua = self.root.tk.call('tk', 'windowingsystem') == 'aqua'
+            items.extend((None, (tr('Menüleiste verlassen') if aqua else tr('Infobereich verlassen'), self.leave_tray),
+                          (tr('Beenden'), self.close)))
+            return items
+
+        def _tray_window(self, key):
+            if self.docked.get():  # the windows are panes in the main window
+                self.show_main_window()
+            if key != 'panel_viewer':
+                self.open_window(key)
+                return
+            keys = sorted(set(self.panel_keys()) | set(other for other in self.windows if is_panel_key(other)),
+                          key=panel_number)
+            for other in keys:
+                self.open_window(other)
+            if not keys:  # no panel yet: the file dialog needs a visible parent
+                self.show_main_window()
+                self.open_panel()
+
+        def _tray_plugin(self, plugin):
+            # Messages of a plugin that cannot start need a visible parent.
+            if not os.path.isfile(script_path(plugin)) or (plugin['pass_trace'] and not self.trace_path):
+                self.show_main_window()
+            self.run_plugin(plugin)
+
+        def _main_window_closed(self):
+            """Close button of the main window: in the menu bar / tray the app keeps running."""
+            if self.tray is not None:
+                self.root.withdraw()
+            else:
+                self.close()
 
         def _build_body(self):
             theme = self.theme
@@ -1149,6 +1237,8 @@ if tk is not None:
                     app.on_open_panels = self.add_panels  # panel buttons
             except Exception as error:
                 (window.pane if docked else window).destroy()
+                if self.tray is not None:
+                    self.show_main_window()
                 messagebox.showerror('CANtrix', str(error), parent=self.root)
                 return
             if not docked:
@@ -2242,6 +2332,7 @@ if tk is not None:
         # ------------------------------------------------------------ closing
 
         def close(self):
+            self.leave_tray()  # questions about unsaved changes need visible windows
             try:
                 if self.root.state() != 'iconic':  # a minimised window has no usable size
                     self.settings['geometry'] = window_geometry(self.root)
