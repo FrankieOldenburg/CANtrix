@@ -44,6 +44,7 @@ Plugins/FBD6_RangingStatistic_from_Trace/Forensic_Reports/forensic_c3d3990104e86
 # Python-Cache (wird beim Start automatisch erzeugt)
 __pycache__/
 *.py[cod]
+.venv/
 
 # Berichte von Plugins (z. B. analyze_byte_pairs.py)
 Traces/*_analysis.html
