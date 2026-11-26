@@ -1,4 +1,5 @@
 {
+  "vector_io": null,
   "format": "CANtrix",
   "version": 1,
   "docked": true,
@@ -63,6 +64,13 @@
         "showEnvironment": true,
         "showErrors": false,
         "showDescription": true,
+        "showDebugger": false,
+        "debugger": {
+          "host": "localhost",
+          "port": 20000,
+          "variables": "",
+          "interval": 100
+        },
         "secondCursor": false,
         "cursor2Time": null,
         "traceIndex": 0,
@@ -73,6 +81,7 @@
             "showEnvironment": true,
             "showErrors": false,
             "showDescription": true,
+            "showDebugger": false,
             "tracePage": 0,
             "traceFilter": "",
             "hidden": []
@@ -196,6 +205,13 @@
         "showEnvironment": true,
         "showErrors": false,
         "showDescription": true,
+        "showDebugger": false,
+        "debugger": {
+          "host": "localhost",
+          "port": 20000,
+          "variables": "",
+          "interval": 100
+        },
         "secondCursor": false,
         "cursor2Time": null,
         "traceIndex": 0,
@@ -206,6 +222,7 @@
             "showEnvironment": true,
             "showErrors": false,
             "showDescription": true,
+            "showDebugger": false,
             "tracePage": 0,
             "traceFilter": "",
             "hidden": []
@@ -306,8 +323,8 @@
         "geometry": ""
       },
       "dock": {
-        "x": 554,
-        "y": 530,
+        "x": 378,
+        "y": 531,
         "width": 1294,
         "height": 376,
         "maximized": false
@@ -321,8 +338,8 @@
       "dock": {
         "x": 901,
         "y": 34,
-        "width": 926,
-        "height": 485,
+        "width": 957,
+        "height": 474,
         "maximized": false
       }
     }

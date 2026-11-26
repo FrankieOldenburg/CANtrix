@@ -1691,6 +1691,13 @@ if tk is not None:
             """Close a child window and remember its window settings for the next time it is opened.
             forget: the user closed a Panel Viewer, so its panel leaves the configuration."""
             window, app = self.windows[key]
+            # A docked viewer is hosted by a DockFrame inside a FloatingPane.  Keep a
+            # reference to the pane while closing it: destroying the DockFrame only
+            # schedules destruction of its pane (see FloatingPane._body_destroyed),
+            # which can leave a dead pane covering the other panes until Tk reaches
+            # the idle queue.  This is especially noticeable when the panel is
+            # closed and another window is selected immediately afterwards.
+            pane = window.pane if getattr(window, 'docked', False) else None
             confirm = getattr(app, 'confirm_close', None)
             if confirm is not None and not confirm():  # e.g. unsaved changes in the Database Editor
                 return False
@@ -1708,6 +1715,11 @@ if tk is not None:
                 app.close()
             except tk.TclError:
                 pass
+            if pane is not None:
+                try:
+                    pane.destroy()
+                except tk.TclError:
+                    pass
             return True
 
         def _remember_window(self, key, app):
