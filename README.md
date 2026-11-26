@@ -168,6 +168,8 @@ Die Zeitstempel entstehen am Rechner und können durch die serielle Übertragung
 
 **Einstellungen > Vector I/O Configuration** verwaltet die CH5-Belegung eines VN1640 oder VN1640A. Unter **Übersicht** lässt sich ein vom XL-Treiber erkanntes Gerät auswählen oder die Seriennummer manuell eingeben. Die Zykluszeit ist von 1 bis 100 ms einstellbar. Unter **Pin-Konfiguration** lassen sich der Analogeingang, beide Digitaleingänge und der Digitalausgang einzeln aktivieren und benennen.
 
+![Vector-I/O-Übersicht](Bilder/Vector-IO-Uebersicht.png)
+
 **OK** legt für die aktiven Pins eine zusätzliche DBC an und lädt sie in die aktuelle Konfiguration. Die Geräte-, Pin- und Zyklusparameter werden mit der `.canconfig` gespeichert. Der Dialog erstellt die Konfiguration und DBC-Definitionen. Die zyklische Abfrage und Ausgabe an der Hardware sind ein separater Betriebsmodus, der hier noch fehlt.
 
 ### TRACE32-Variablen
