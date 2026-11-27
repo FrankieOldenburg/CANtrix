@@ -227,7 +227,7 @@ if tk is not None:
             self.duration = tk.StringVar(value=str(saved('duration', '')))
             self.view = tk.StringVar(value='packets' if saved('view') == 'packets' else 'devices')
             self._build_layout()
-            root.title('CAN BLE Monitor')
+            root.title('BLE Monitor')
             root.minsize(760, 360)
             root.geometry(initial_geometry(root, self.settings, '1200x600'))
             set_text(self.status, 'Bereit')
@@ -240,7 +240,7 @@ if tk is not None:
 
         def _build_layout(self):
             theme = self.theme
-            theme.header(self.root, 'CAN BLE Monitor', tr('Bluetooth-Low-Energy-Advertising'))
+            theme.header(self.root, 'BLE Monitor', tr('Bluetooth-Low-Energy-Advertising'))
             footer = theme.footer(self.root, self.status)
             theme.footer_label(footer, self.count)
             body = tk.Frame(self.root, background=C.APP_BG)
@@ -327,7 +327,7 @@ if tk is not None:
                 if duration is not None and not duration > 0:
                     raise ValueError
             except ValueError:
-                messagebox.showerror('CAN BLE Monitor', tr('Die Laufzeit muss eine positive Zahl sein.'),
+                messagebox.showerror('BLE Monitor', tr('Die Laufzeit muss eine positive Zahl sein.'),
                                      parent=self.root)
                 return
             self.queue = queue.Queue()  # nothing of an earlier scan
@@ -375,7 +375,7 @@ if tk is not None:
                 self._update_buttons()
             self.poll_job = self.root.after(POLL_MS, self._poll)
             if error is not None:
-                messagebox.showerror('CAN BLE Monitor', error, parent=self.root)
+                messagebox.showerror('BLE Monitor', error, parent=self.root)
 
         # ------------------------------------------------------------ table
 
@@ -522,7 +522,7 @@ if tk is not None:
             try:
                 write_csv(path, packets)
             except OSError as error:
-                messagebox.showerror('CAN BLE Monitor', str(error), parent=self.root)
+                messagebox.showerror('BLE Monitor', str(error), parent=self.root)
                 return
             set_text(self.status, 'Gespeichert: %s', path)
 
