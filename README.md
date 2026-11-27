@@ -5,6 +5,7 @@ Der CANtrix ist ein Werkzeug zum Analysieren von CAN- und CAN-FD-Botschaften. Er
 - **Database Editor:** zeigt CAN-Datenbasen (DBC, ARXML, HTML-Message-Catalogue) mit Nachrichten, Signalen, Bitlayout und Busstruktur.
 - **Trace Viewer:** öffnet CAN-Traces (ASC, BLF, MF4, TRC, candump, BUSMASTER, SLCAN, CSV, PCAP; siehe „Unterstützte Trace-Formate“), dekodiert die Signale mit der Datenbasis und zeigt ihren Verlauf als Grafik mit Zoom und Cursor.
 - **Panel Viewer:** zeigt Vector-Panels (`.xvp` aus dem CANalyzer/CANoe Panel Designer) mit Werten aus dem Trace: Zeigerinstrument, Zahlenfelder, Auswahlfelder, LEDs und Balken, verknüpft mit Signalen oder Umgebungsvariablen.
+- **Logic Analyzer:** zeichnet digitale und analoge Signale mit einem sigrok-pico auf oder die CAN-RX-Leitung mit einem USBtingo (mit CAN-Dekodierung) und öffnet Sigrok-Dateien (`.sr`).
 - **Plugins:** startet eigene Python-Skripte, auf Wunsch mit dem geladenen Trace.
 - **Konfigurationen:** Datenbasis, Trace, Panel, Fensteranordnung und Plugins lassen sich als `.canconfig` speichern und wieder laden.
 
@@ -290,7 +291,7 @@ Ein Raspberry Pi Pico mit der Firmware sigrok-pico (github.com/pico-coder/sigrok
 - **Zoomen und Verschieben:** Mausrad zoomt, Ziehen verschiebt (auch Umschalt+Mausrad und die Bildlaufleiste), Doppelklick auf ein Bit oder Feld zoomt darauf. "Alles anzeigen" zeigt die ganze Aufzeichnung.
 - **Viele Kanäle:** senkrecht rollen mit der rechten Bildlaufleiste oder dem Mausrad über den Kanalnamen.
 - **Werte ablesen:** Fährt man mit der Maus über ein Bit, ein Feld oder einen analogen Kanal, stehen Bedeutung bzw. Spannung und Zeit in der Statusleiste.
-- **Dateien:** Das Öffnen-Symbol lädt eine Sigrok-Datei (`.sr`, auch mit mehreren digitalen und analogen Kanälen). Dekodiert wird nur bei gewähltem Gerät USBtingo; hat die Datei mehrere digitale Kanäle, bestimmt "CAN-Kanal" den dekodierten. Das Speichern-Symbol kopiert die Aufzeichnung an einen frei gewählten Ort.
+- **Dateien:** Das Öffnen-Symbol lädt eine Sigrok-Datei (`.sr`, auch mit mehreren digitalen und analogen Kanälen). Dekodiert wird nur bei gewähltem Gerät USBtingo; hat die Datei mehrere digitale Kanäle, bestimmt "CAN-Kanal" den dekodierten. Enthält die Datei Kanalbezeichnungen, werden sie übernommen. Das Speichern-Symbol speichert die Aufzeichnung an einen frei gewählten Ort, beim sigrok-pico mit den aktuellen Bezeichnungen.
 
 ### BLE Monitor
 

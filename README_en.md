@@ -5,6 +5,7 @@ The CANtrix is a tool for analysing CAN and CAN FD messages. It runs on Windows 
 - **Database Editor:** shows CAN databases (DBC, ARXML, HTML message catalogue) with messages, signals, bit layout and bus structure.
 - **Trace Viewer:** opens CAN traces (ASC, BLF, MF4, TRC, candump, BUSMASTER, SLCAN, CSV, PCAP; see "Supported trace formats"), decodes the signals with the database and shows their values as a graph with zoom and cursor.
 - **Panel Viewer:** shows Vector panels (`.xvp` from the CANalyzer/CANoe Panel Designer) with values from the trace: gauge, numeric fields, selection boxes, LEDs and bars, linked to signals or environment variables.
+- **Logic Analyzer:** records digital and analog signals with a sigrok-pico, or the CAN RX line with a USBtingo (with CAN decoding), and opens Sigrok files (`.sr`).
 - **Plugins:** runs your own Python scripts, optionally with the loaded trace.
 - **Configurations:** database, trace, panel, window layout and plugins can be saved as `.canconfig` and loaded again.
 
@@ -288,7 +289,7 @@ A Raspberry Pi Pico with the firmware sigrok-pico (github.com/pico-coder/sigrok-
 - **Zooming and panning:** the mouse wheel zooms, dragging pans (also Shift+wheel and the scroll bar), a double click on a bit or field zooms to it. "Show all" shows the whole recording.
 - **Many channels:** scroll vertically with the scroll bar on the right or the mouse wheel over the channel names.
 - **Reading values:** hovering over a bit, a field or an analog channel shows its meaning or voltage and the time in the status bar.
-- **Files:** the open icon loads a Sigrok file (`.sr`, also with several digital and analog channels). Decoding takes place only while the device USBtingo is selected; if the file has several digital channels, "CAN channel" sets the decoded one. The save icon copies the recording to a place of your choice.
+- **Files:** the open icon loads a Sigrok file (`.sr`, also with several digital and analog channels). Decoding takes place only while the device USBtingo is selected; if the file has several digital channels, "CAN channel" sets the decoded one. If the file contains channel labels, they are taken over. The save icon saves the recording to a place of your choice, for the sigrok-pico with the current labels.
 
 ### BLE Monitor
 
