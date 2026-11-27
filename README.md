@@ -93,7 +93,7 @@ Eine Konfiguration kann mehrere CAN-Traces enthalten, die nach dem Laden als ein
 - Ein Trace ohne Startzeit (z. B. SLCAN) schließt an das Ende des vorherigen in der Liste an.
 - Frames und Werte von Umgebungsvariablen aller Traces werden nach Zeit zusammengeführt; Trace Viewer, Panel Viewer und Status zeigen einen Trace. Im Hauptfenster steht jede Datei mit Frames, Startzeit und Beginn im Gesamt-Trace.
 - Jede Änderung gilt sofort; gespeichert wird die Liste mit der Konfiguration. Unveränderte Dateien werden nicht neu eingelesen.
-- Bei mehreren Traces oder einem gewählten Zeitbereich erzeugt **Aktuellen Trace an das Plugin übergeben** eine temporäre ASC-Datei mit den entsprechenden Daten.
+- Bei mehreren Traces oder einem gewählten Zeitbereich erzeugt der Plugin-Modus **Trace übergeben** eine temporäre ASC-Datei mit den entsprechenden Daten.
 
 ### Konfigurationen
 
@@ -389,7 +389,11 @@ Plugins sind Python-Skripte. Sie können im Ordner `Plugins` (auch in Unterordne
 
 Unter "Plugins > Plugins konfigurieren…" wird ein Skript ausgewählt und bekommt einen Namen. Optional lassen sich Argumente angeben (z. B. `--serve`).
 
-Mit dem Haken "Aktuellen Trace an das Plugin übergeben" bekommt das Skript den Pfad des geladenen Traces als letztes Argument, oder an der Stelle von `{trace}` in den Argumenten.
+Der **Modus** legt fest, was das Skript bekommt:
+
+- **Trace übergeben:** den Pfad des geladenen Traces als letztes Argument, oder an der Stelle von `{trace}` in den Argumenten.
+- **Live-Modus:** die Botschaften der laufenden Aufzeichnung (Datenquelle "Live") und das Argument `--live`.
+- **Ohne Trace:** nur die angegebenen Argumente.
 
 ### Plugins und Konfigurationen
 
@@ -398,3 +402,15 @@ Die Plugins gehören zur jeweiligen Konfiguration (`.canconfig`), jede Konfigura
 ### Ausführen
 
 Das Skript läuft im eigenen Ordner, seine Ausgabe erscheint in einem eigenen Fenster.
+
+### Live-Modus
+
+Das Skript wird einmal gestartet und liest von der Standardeingabe je Botschaft eine ASC-Zeile (CAN-FD-Botschaften als `CANFD`-Zeile).
+
+- Läuft schon eine Aufzeichnung, kommt zuerst das bisher Aufgezeichnete, dann jede neue Botschaft. Sonst wartet das Plugin, bis eine Aufzeichnung läuft.
+- Stop (oder "Löschen") beendet die Eingabe, damit das Skript abschließen kann. Für eine neue Aufzeichnung wird das Plugin neu gestartet.
+- Ist ein CAN-Kanal gewählt, bekommt das Plugin nur diesen. Maßgeblich ist die Wahl beim Start des Plugins.
+- Bei sehr langen Aufzeichnungen sind die ältesten Botschaften nicht mehr vorhanden; darauf weist das Ausgabefenster hin. Es behält die letzten 20.000 Zeilen.
+- Ausgabezeilen dürfen mit ANSI-Codes eingefärbt werden, z. B. `ESC[31m` (rot) bis `ESC[0m`.
+
+Das Skript muss dafür den Live-Modus unterstützen: `--live` auswerten, `sys.stdin` zeilenweise lesen und die Ausgabe sofort schreiben.

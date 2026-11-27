@@ -503,25 +503,34 @@ EN = {
     'Auswählen…': 'Choose…',
     'Optional, z. B. --serve. Mit {trace} wird der Trace an dieser Stelle eingesetzt, sonst am Ende.':
         'Optional, e.g. --serve. {trace} is replaced by the trace, otherwise it is added at the end.',
-    'Aktuellen Trace an das Plugin übergeben': 'Pass the current trace to the plugin',
+    'Trace übergeben': 'Pass the trace',
+    'Live-Modus': 'Live mode',
+    'Ohne Trace': 'Without trace',
+    'Modus': 'Mode',
+    ' · Live-Modus': ' · live mode',
+    'Im Live-Modus erhält das Plugin die Botschaften der Aufzeichnung und das Argument --live.':
+        'In live mode the plugin receives the messages of the recording and the argument --live.',
+    'Wartet auf Aufzeichnung…': 'Waiting for a recording…',
+    'Live: empfängt Botschaften…': 'Live: receiving messages…',
+    'Aufzeichnung beendet, Plugin schließt ab…': 'Recording ended, the plugin is finishing…',
+    'Hinweis: Die ersten %d Botschaften der Aufzeichnung sind nicht mehr vorhanden.':
+        'Note: the first %d messages of the recording are no longer available.',
     'Neu': 'New',
     'Entfernen': 'Remove',
     'Schließen': 'Close',
     'Hinzufügen': 'Add',
     'Übernehmen': 'Apply',
-    'ja': 'yes',
-    'nein': 'no',
     'Plugin-Skripte auswählen': 'Choose plugin scripts',
     'Python-Skript': 'Python script',
-    'Hinzugefügt: %s – Name, Argumente und Trace-Haken lassen sich hier ändern (Übernehmen).':
-        'Added: %s – name, arguments and the trace option can be changed here (Apply).',
+    'Hinzugefügt: %s – Name, Argumente und Modus lassen sich hier ändern (Übernehmen).':
+        'Added: %s – name, arguments and the mode can be changed here (Apply).',
     'Nicht hinzugefügt (nur .py-Dateien):\n%s': 'Not added (only .py files):\n%s',
     'Bitte ein Skript auswählen.': 'Please choose a script.',
     'Plugins müssen Python-Skripte (.py) sein.': 'Plugins must be Python scripts (.py).',
     'Skript nicht gefunden:\n%s': 'Script not found:\n%s',
     'Die Argumente sind ungültig (%s).': 'The arguments are invalid (%s).',
-    'Plugin hinzugefügt: %s – Name, Argumente und Trace-Haken lassen sich jetzt noch ändern (Übernehmen).':
-        'Plugin added: %s – name, arguments and the trace option can still be changed now (Apply).',
+    'Plugin hinzugefügt: %s – Name, Argumente und Modus lassen sich jetzt noch ändern (Übernehmen).':
+        'Plugin added: %s – name, arguments and the mode can still be changed now (Apply).',
     'Plugin geändert: %s': 'Plugin changed: %s',
     'Plugin entfernt: %s': 'Plugin removed: %s',
 

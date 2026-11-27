@@ -912,8 +912,8 @@ if tk is not None:
                 return [('Plugins', tr('Keine'), '')]
             rows = []
             for plugin in self.plugins:
-                text = '%s · %s%s' % (plugin['name'], plugin['script'],
-                                        tr(' · bekommt den Trace') if plugin['pass_trace'] else '')
+                suffix = {'trace': ' · bekommt den Trace', 'live': ' · Live-Modus'}.get(plugin['mode'])
+                text = '%s · %s%s' % (plugin['name'], plugin['script'], tr(suffix) if suffix else '')
                 if os.path.isfile(script_path(plugin)):
                     rows.append(('Plugin', text, ''))
                 else:
@@ -1282,7 +1282,9 @@ if tk is not None:
                         engine.on_watch_database = self._generated_database_changed
                         engine.connection = self.recorder_connection()
                         engine.on_source_changed = self._source_rejected
-                        engine.on_running_changed = lambda running: self._update_recording_buttons()
+                        engine.on_running_changed = self._recording_changed
+                        engine.on_live_recorded = self._plugin_frames
+                        engine.on_live_cleared = self._plugins_end_recording
                         engine.on_connection_status = self._connection_status
                         engine.attach_menu = self.attach_menu  # also for its selection windows
                         engine.on_cursor_changed = self._cursor_changed
@@ -1690,6 +1692,29 @@ if tk is not None:
             """Messages received by the Trace Recorder: the Panel Viewer can show them live."""
             for panel in self._panel_apps():
                 panel.live_frames(messages, reset)
+
+        def _recording_changed(self, running):
+            """The recording of the Trace Viewer started or stopped: buttons and live plugins follow."""
+            self._update_recording_buttons()
+            if running:
+                for run in self._live_plugins():
+                    run.begin_recording()
+            else:
+                # The last messages arrive with the next tick of the recorder, so end the input a bit later.
+                active = [run for run in self._live_plugins() if run.state == 'active']
+                if active:
+                    self.root.after(200, lambda: [run.end_recording() for run in active])
+
+        def _live_plugins(self):
+            return [run for run in self.plugin_runs if run.live and run.window.winfo_exists()]
+
+        def _plugin_frames(self, frames):
+            for run in self._live_plugins():
+                run.feed(frames)
+
+        def _plugins_end_recording(self):
+            for run in self._live_plugins():
+                run.end_recording()
 
         def _live_environment(self, samples):
             for panel in self._panel_apps():
@@ -2256,8 +2281,13 @@ if tk is not None:
                 return
             self.plugin_runs = [run for run in self.plugin_runs if run.window.winfo_exists()]
             database_paths = [entry['path'] for entry in self.database_entries if existing_file(entry['path'])]
-            self.plugin_runs.append(PluginRun(self.root, plugin, command, self.attach_menu, database_paths))
+            run = PluginRun(self.root, plugin, command, self.attach_menu, database_paths, self.channel)
+            self.plugin_runs.append(run)
             set_text(self.status_var, 'Plugin gestartet: %s', plugin['name'])
+            engine = self._viewer()
+            recording = engine.recording() if run.live and engine is not None else None
+            if recording is not None:
+                run.begin_recording(*recording)
 
         def write_combined_trace(self):
             """Several traces or a selected range: write the trace (combined / only the range, times from 0) as

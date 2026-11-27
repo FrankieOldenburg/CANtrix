@@ -148,9 +148,10 @@ def finite_pair(value):
 
 class Frame(object):
     __slots__ = ('time', 'channel', 'direction', 'id', 'trace_name', 'data', 'line',
-                 'message', 'name', 'count', '_int')
+                 'message', 'name', 'count', '_int', 'fd')
 
-    def __init__(self, time, channel, direction, identifier, trace_name, data, line):
+    def __init__(self, time, channel, direction, identifier, trace_name, data, line, fd=False):
+        self.fd = fd  # CAN FD frame; only known for recorded frames
         self.time = time
         self.channel = channel
         self.direction = direction
@@ -607,6 +608,8 @@ if tk is not None:
             self._live_signature = None
             self.on_connection_status = None  # callback(text or None): connection status of the recording (status overview)
             self.on_running_changed = None  # callback(running): recording started or stopped (Start/Stop in the main window)
+            self.on_live_recorded = None  # callback(frames): frames just added to the recording (live plugins)
+            self.on_live_cleared = None  # callback(): the recording is forgotten, its time starts again
 
             self.row_frames = {}
             self.signal_rows = {}
@@ -847,6 +850,8 @@ if tk is not None:
             self._update_debugger()
 
         def _clear_recording(self):
+            if self.on_live_cleared is not None:
+                self.on_live_cleared()
             data = self._live_trace
             del data['frames'][:]
             data['environment'].clear()
@@ -886,11 +891,19 @@ if tk is not None:
             connection = self._connection or {}
             return str(connection['channel'] + 1) if isinstance(connection.get('channel'), int) else ''
 
+        def recording(self):
+            """(frames, dropped) of the running recording, None while nothing is recorded."""
+            if not self.live() or self.recorder is None or not self.recorder.running():
+                return None
+            frames = list(self._live_trace['frames'])
+            return frames, self._live_line - len(frames)
+
         def _live_data(self, messages):
             """Messages of the recorder (GUI thread): append them to the recording; the display follows in
             _live_tick."""
             data = self._live_trace
             frames = data['frames']
+            added = []
             for message in messages:
                 stamp = message.timestamp or 0.0
                 if self._live_t0 is None:
@@ -901,8 +914,12 @@ if tk is not None:
                     data['errors'].append((moment, channel, 'Error Frame'))
                     continue
                 self._live_line += 1
-                frames.append(Frame(moment, channel, 'Rx' if getattr(message, 'is_rx', True) else 'Tx',
-                                    message.arbitration_id, '', bytes(message.data), self._live_line))
+                added.append(Frame(moment, channel, 'Rx' if getattr(message, 'is_rx', True) else 'Tx',
+                                   message.arbitration_id, '', bytes(message.data), self._live_line,
+                                   bool(getattr(message, 'is_fd', False))))
+            frames.extend(added)
+            if added and self.on_live_recorded is not None:
+                self.on_live_recorded(added)
             if len(frames) > MAX_LIVE_FRAMES:
                 del frames[:len(frames) - MAX_LIVE_FRAMES]
             if messages and messages[-1].timestamp:

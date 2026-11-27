@@ -93,7 +93,7 @@ A configuration can contain several CAN traces, which are treated as one single 
 - A trace without a start time (e.g. SLCAN) follows the end of the previous one in the list.
 - Frames and values of environment variables of all traces are merged by time; Trace Viewer, Panel Viewer and status show one trace. The main window lists every file with frames, start time and beginning in the combined trace.
 - Every change applies right away; the list is saved with the configuration. Unchanged files are not read again.
-- With multiple traces or a selected time range, **Pass the current trace to the plugin** creates a temporary ASC file with the corresponding data.
+- With multiple traces or a selected time range, the plugin mode **Pass the trace** creates a temporary ASC file with the corresponding data.
 
 ### Configurations
 
@@ -387,7 +387,11 @@ Plugins are Python scripts. They can be in the folder `Plugins` (also in subfold
 
 In "Plugins > Configure plugins…" you choose a script and give it a name. Optionally arguments can be given (e.g. `--serve`).
 
-With the check box "Pass the current trace to the plugin" the script gets the path of the loaded trace as its last argument, or in place of `{trace}` in the arguments.
+The **mode** determines what the script gets:
+
+- **Pass the trace:** the path of the loaded trace as its last argument, or in place of `{trace}` in the arguments.
+- **Live mode:** the messages of the running recording (data source "Live") and the argument `--live`.
+- **Without trace:** only the given arguments.
 
 ### Plugins and configurations
 
@@ -396,3 +400,15 @@ Plugins belong to their configuration (`.canconfig`), so every configuration has
 ### Running
 
 The script runs in its own folder, and its output appears in a window of its own.
+
+### Live mode
+
+The script is started once and reads one ASC line per message from standard input (CAN FD messages as `CANFD` lines).
+
+- If a recording is already running, the messages recorded so far come first, then every new one. Otherwise the plugin waits until a recording runs.
+- Stop (or "Clear") ends the input so that the script can finish. A new recording needs a new start of the plugin.
+- If a CAN channel is selected, the plugin only gets that one. The selection at the start of the plugin counts.
+- Very long recordings no longer hold their oldest messages; the output window says so. It keeps the last 20,000 lines.
+- Output lines may be coloured with ANSI codes, e.g. `ESC[31m` (red) up to `ESC[0m`.
+
+The script has to support live mode: evaluate `--live`, read `sys.stdin` line by line and write its output right away.

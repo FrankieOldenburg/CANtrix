@@ -118,17 +118,19 @@ def write_asc(handle, frames, environment, start, errors=None):
             number = numbers.get(item) or (int(item) if str(item).isdigit() else 1)
             handle.write('  %.6f %d  %s\n' % (time, number, value.replace('Error Frame', 'ErrorFrame', 1)))
             continue
-        frame = item
-        identifier = ('%X' % frame.id) + ('x' if is_extended(frame) else '')
-        if is_fd(frame):
-            data = fd_data(frame)
-            handle.write('  %.6f CANFD %3d %s %8s %32s 1 0 %X %2d %s\n' % (
-                time, numbers[frame.channel], frame.direction, identifier, '', dlc_code(len(data)), len(data),
-                _hex(data)))
-        else:
-            handle.write('  %.6f %d  %-15s %s   d %d %s\n' % (
-                time, numbers[frame.channel], identifier, frame.direction, len(frame.data), _hex(frame.data)))
+        handle.write(asc_line(item, numbers[item.channel], is_fd(item)))
     handle.write('End TriggerBlock\n')
+
+
+def asc_line(frame, number, fd):
+    """One frame as a line of an ASC file (number: CAN channel; fd: write it as CAN FD)."""
+    identifier = ('%X' % frame.id) + ('x' if is_extended(frame) else '')
+    if fd:
+        data = fd_data(frame)
+        return '  %.6f CANFD %3d %s %8s %32s 1 0 %X %2d %s\n' % (
+            frame.time, number, frame.direction, identifier, '', dlc_code(len(data)), len(data), _hex(data))
+    return '  %.6f %d  %-15s %s   d %d %s\n' % (
+        frame.time, number, identifier, frame.direction, len(frame.data), _hex(frame.data))
 
 
 def write_trc(handle, frames, environment, start):

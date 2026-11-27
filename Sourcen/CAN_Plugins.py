@@ -3,11 +3,16 @@
 
 Ein Plugin ist ein Python-Skript, meist im Ordner Plugins/ (auch in Unterordnern), sonst
 beliebig. Der CANtrix startet es als eigenen Prozess im Ordner des Skripts und zeigt seine Ausgabe in einem Fenster.
-Optional bekommt es den Pfad des aktuell geladenen Traces als Argument.
+Optional bekommt es den Pfad des aktuell geladenen Traces als Argument oder, im Live-Modus,
+die Botschaften der laufenden Aufzeichnung.
 
 Eine Plugin-Einstellung ist ein dict:
     {'name': Menütext, 'script': Pfad relativ zu Plugins/, außerhalb davon absolut (mit '/'),
-     'arguments': zusätzliche Argumente, 'pass_trace': bool}
+     'arguments': zusätzliche Argumente, 'mode': 'trace' | 'live' | 'none',
+     'pass_trace': mode == 'trace' (für ältere Versionen)}
+Im Live-Modus wird --live angehängt. Das Plugin liest von stdin je Botschaft eine ASC-Zeile
+(zuerst die bisherige Aufzeichnung); das Ende von stdin ist das Ende der Aufzeichnung.
+Ausgabezeilen dürfen ANSI-Farbcodes (ESC[31m … ESC[0m) enthalten.
 Steht in den Argumenten der Platzhalter {trace}, wird dort der Trace-Pfad eingesetzt;
 sonst wird er (bei pass_trace) als letztes Argument angehängt.
 Die geladenen Datenbasen bekommt jedes Plugin in der Umgebungsvariable CANTRIX_DATABASES
@@ -17,6 +22,7 @@ Nur Standardbibliothek, kompatibel mit Python 3.6.
 """
 import os
 import queue
+import re
 import shlex
 import shutil
 import subprocess
@@ -27,11 +33,18 @@ from tkinter import filedialog, messagebox, ttk
 
 from CAN_Common import C, Theme, apply_appearance, is_frozen, program_dir
 from CAN_Language import set_text, tr
+from CAN_TraceWriters import asc_line, is_fd
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = program_dir()  # Projektordner (die Skripte liegen in Sourcen/), in der exe der Ordner daneben
 PLUGINS_DIR = os.path.join(ROOT, 'Plugins')
 TRACE_PLACEHOLDER = '{trace}'
+LIVE_ARGUMENT = '--live'
+MODES = (('trace', 'Trace übergeben'), ('live', 'Live-Modus'), ('none', 'Ohne Trace'))
+LIVE_OUTPUT_LINES = 20000  # older output of a live plugin is removed
+ANSI_RE = re.compile('\x1b\\[([0-9;]*)m')
+ANSI_TAGS = {'31': 'red', '32': 'green', '33': 'orange', '34': 'blue', '35': 'violet', '36': 'blue',
+             '90': 'info', '91': 'red', '92': 'olive'}
 
 
 # ---------------------------------------------------------------- plugin settings
@@ -43,8 +56,11 @@ def normalize_plugins(items):
         if isinstance(item, dict) and isinstance(item.get('script'), str) and item['script'].strip():
             script = item['script'].strip()
             name = str(item.get('name') or '').strip() or os.path.splitext(os.path.basename(script))[0]
+            mode = item.get('mode')
+            if mode not in [key for key, _title in MODES]:
+                mode = 'trace' if item.get('pass_trace') is True else 'none'
             plugins.append({'name': name, 'script': script, 'arguments': str(item.get('arguments') or ''),
-                            'pass_trace': item.get('pass_trace') is True})
+                            'mode': mode, 'pass_trace': mode == 'trace'})
     return plugins
 
 
@@ -108,16 +124,52 @@ def build_command(plugin, trace_path=None):
             arguments.append(trace_path)
     else:
         arguments = [argument for argument in arguments if argument != TRACE_PLACEHOLDER]
+        if plugin.get('mode') == 'live' and LIVE_ARGUMENT not in arguments:
+            arguments.append(LIVE_ARGUMENT)
     return [python_executable(), '-u', script_path(plugin)] + arguments
+
+
+# ---------------------------------------------------------------- live data
+
+def live_lines(frames):
+    """The ASC lines of recorded frames as bytes (CAN FD frames also with up to 8 bytes)."""
+    lines = []
+    for frame in frames:
+        number = int(frame.channel) if str(frame.channel).isdigit() else 1
+        lines.append(asc_line(frame, number, frame.fd or is_fd(frame)))
+    return ''.join(lines).encode('utf-8')
+
+
+def ansi_runs(text, tag=None):
+    """Split output with ANSI colour codes into [(text, tag)]; returns (runs, tag still active)."""
+    runs = []
+    position = 0
+    for match in ANSI_RE.finditer(text):
+        if match.start() > position:
+            runs.append((text[position:match.start()], tag))
+        tag = ANSI_TAGS.get(match.group(1).split(';')[-1])
+        position = match.end()
+    if position < len(text):
+        runs.append((text[position:], tag))
+    return runs, tag
 
 
 # ---------------------------------------------------------------- output window
 
 class PluginRun(object):
-    """Runs a plugin and shows its output (stdout and stderr) live in its own window."""
+    """Runs a plugin and shows its output (stdout and stderr) live in its own window.
 
-    def __init__(self, parent, plugin, command, attach_menu=None, database_paths=()):
+    A live plugin gets the frames of the recording on stdin: it waits ('waiting') until a recording runs,
+    is fed while it does ('active') and its input ends with the recording ('done'). channel: only this CAN
+    channel (None: all)."""
+
+    def __init__(self, parent, plugin, command, attach_menu=None, database_paths=(), channel=None):
         self.plugin = plugin
+        self.live = plugin.get('mode') == 'live'
+        self.channel = channel
+        self.state = 'waiting' if self.live else None
+        self.input = queue.Queue()  # lists of frames for the writer thread, None ends the input
+        self.color = None  # ANSI colour still active at the end of the last output
         self.database_paths = list(database_paths)
         self.command = command
         self.lines = queue.Queue()
@@ -147,6 +199,10 @@ class PluginRun(object):
         text.tag_configure('info', foreground=C.MUTED)
         text.tag_configure('error', foreground=C.DANGER)
         text.tag_configure('ok', foreground=C.SUCCESS)
+        for tag, color in (('red', C.DANGER), ('green', C.SUCCESS), ('orange', C.SERIES_COLORS[1]),
+                           ('blue', C.SERIES_COLORS[5]), ('violet', C.SERIES_COLORS[3]),
+                           ('olive', C.SERIES_COLORS[7])):
+            text.tag_configure(tag, foreground=color)
         yscroll = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=text.yview)
         xscroll = ttk.Scrollbar(frame, orient=tk.HORIZONTAL, command=text.xview)
         text.configure(yscrollcommand=yscroll.set, xscrollcommand=xscroll.set, state=tk.DISABLED)
@@ -165,6 +221,10 @@ class PluginRun(object):
         at_end = text.yview()[1] >= 0.999
         text.configure(state=tk.NORMAL)
         text.insert(tk.END, line, (tag,) if tag else ())
+        if self.live:
+            excess = int(text.index('end-1c').split('.')[0]) - LIVE_OUTPUT_LINES
+            if excess > 0:
+                text.delete('1.0', '%d.0' % (excess + 1))
         text.configure(state=tk.DISABLED)
         if at_end:
             text.see(tk.END)
@@ -176,7 +236,8 @@ class PluginRun(object):
                            CANTRIX_DATABASES=os.pathsep.join(self.database_paths))
         flags = 0x08000000 if os.name == 'nt' else 0  # CREATE_NO_WINDOW: no extra console on Windows
         try:
-            self.process = subprocess.Popen(self.command, cwd=cwd, env=environment, stdin=subprocess.DEVNULL,
+            self.process = subprocess.Popen(self.command, cwd=cwd, env=environment,
+                                            stdin=subprocess.PIPE if self.live else subprocess.DEVNULL,
                                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                             creationflags=flags)
         except OSError as error:
@@ -184,8 +245,10 @@ class PluginRun(object):
             set_text(self.status, 'Start fehlgeschlagen')
             self.stop_button.state(['disabled'])
             return
-        set_text(self.status, 'Läuft…')
+        set_text(self.status, 'Wartet auf Aufzeichnung…' if self.live else 'Läuft…')
         threading.Thread(target=self._read, daemon=True).start()
+        if self.live:
+            threading.Thread(target=self._write_input, daemon=True).start()
         self._poll_job = self.window.after(50, self.poll)
 
     def _read(self):
@@ -193,6 +256,50 @@ class PluginRun(object):
             self.lines.put(raw.decode('utf-8', errors='replace'))
         self.process.stdout.close()
         self.lines.put(None)
+
+    def _write_input(self):
+        """Thread: frames to the plugin, so a slow plugin never blocks the window."""
+        pipe = self.process.stdin
+        try:
+            while True:
+                frames = self.input.get()
+                if frames is None:
+                    break
+                pipe.write(live_lines(frames))
+                pipe.flush()
+        except (OSError, ValueError):  # the plugin has ended
+            pass
+        try:
+            pipe.close()
+        except (OSError, ValueError):
+            pass
+
+    def begin_recording(self, frames=(), dropped=0):
+        """A recording runs: frames are those recorded so far, dropped the number already forgotten."""
+        if self.state != 'waiting' or not self.running():
+            return
+        self.state = 'active'
+        set_text(self.status, 'Live: empfängt Botschaften…')
+        if dropped:
+            self.write(tr('Hinweis: Die ersten %d Botschaften der Aufzeichnung sind nicht mehr vorhanden.')
+                       % dropped + '\n', 'error')
+        self.feed(frames)
+
+    def feed(self, frames):
+        if self.state != 'active' or not self.running():
+            return
+        frames = [frame for frame in frames if self.channel is None or frame.channel == self.channel]
+        if frames:
+            self.input.put(frames)
+
+    def end_recording(self):
+        """The recording ended: close the input, the plugin can finish."""
+        if self.state != 'active':
+            return
+        self.state = 'done'
+        self.input.put(None)
+        if self.running():
+            set_text(self.status, 'Aufzeichnung beendet, Plugin schließt ab…')
 
     def poll(self):
         chunk = []
@@ -207,9 +314,14 @@ class PluginRun(object):
         except queue.Empty:
             pass
         if chunk:
-            self.write(''.join(chunk))
+            runs, self.color = ansi_runs(''.join(chunk), self.color)
+            for part, tag in runs:
+                self.write(part, tag)
         if finished:
             code = self.process.wait()
+            if self.live:
+                self.state = 'done'
+                self.input.put(None)
             ok = code == 0
             self.write('\n%s\n' % (tr('Beendet mit Code %d') % code), 'ok' if ok else 'error')
             if ok:
@@ -242,7 +354,7 @@ class PluginRun(object):
 class PluginConfigWindow(object):
     """Add, change and remove plugins. on_change(plugins) gets the new list after every change."""
 
-    COLUMNS = (('name', 'Name', 180), ('script', 'Skript', 300), ('trace', 'Trace', 70), ('arguments', 'Argumente', 200))
+    COLUMNS = (('name', 'Name', 180), ('script', 'Skript', 260), ('mode', 'Modus', 130), ('arguments', 'Argumente', 180))
 
     def __init__(self, parent, plugins, on_change, attach_menu=None):
         self.plugins = [dict(plugin) for plugin in plugins]
@@ -257,7 +369,7 @@ class PluginConfigWindow(object):
         self.name_var = tk.StringVar()
         self.script_var = tk.StringVar()
         self.arguments_var = tk.StringVar()
-        self.trace_var = tk.BooleanVar(value=True)
+        self.mode_var = tk.StringVar(value='trace')
         self.form_title = tk.StringVar(value=tr('Neues Plugin'))
         theme.header(window, 'Plugins', tr('Python-Skripte'))
         theme.footer(window, self.status)
@@ -276,7 +388,7 @@ class PluginConfigWindow(object):
                                         selectmode='browse', height=5)
         for key, title, width in self.COLUMNS:
             tree.heading(key, text=tr(title), anchor=tk.W)
-            tree.column(key, width=width, minwidth=50, anchor=tk.CENTER if key == 'trace' else tk.W,
+            tree.column(key, width=width, minwidth=50, anchor=tk.W,
                         stretch=key in ('script', 'arguments'))
         scroll = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=tree.yview)
         tree.configure(yscrollcommand=scroll.set)
@@ -298,11 +410,18 @@ class PluginConfigWindow(object):
         ttk.Label(form, text=tr('Optional, z. B. --serve. Mit {trace} wird der Trace an dieser Stelle eingesetzt, '
                                 'sonst am Ende.'),
                   foreground=C.MUTED, font=theme.font_axis).grid(row=3, column=1, columnspan=2, sticky=tk.W)
-        ttk.Checkbutton(form, text=tr('Aktuellen Trace an das Plugin übergeben'),
-                        variable=self.trace_var).grid(row=4, column=1, columnspan=2, sticky=tk.W, pady=(6, 0))
+        ttk.Label(form, text=tr('Modus')).grid(row=4, column=0, sticky=tk.W, padx=(0, 10), pady=(6, 0))
+        modes = ttk.Frame(form)
+        modes.grid(row=4, column=1, columnspan=2, sticky=tk.W, pady=(6, 0))
+        for key, title in MODES:
+            ttk.Radiobutton(modes, text=tr(title), value=key,
+                            variable=self.mode_var).pack(side=tk.LEFT, padx=(0, 16))
+        ttk.Label(form, text=tr('Im Live-Modus erhält das Plugin die Botschaften der Aufzeichnung und das Argument '
+                                '--live.'),
+                  foreground=C.MUTED, font=theme.font_axis).grid(row=5, column=1, columnspan=2, sticky=tk.W)
 
         buttons = ttk.Frame(form, padding=(0, 12, 0, 0))
-        buttons.grid(row=5, column=0, columnspan=3, sticky=tk.EW)
+        buttons.grid(row=6, column=0, columnspan=3, sticky=tk.EW)
         ttk.Button(buttons, text=tr('Neu'), command=self.new).pack(side=tk.LEFT)
         self.remove_button = ttk.Button(buttons, text=tr('Entfernen'), command=self.remove)
         self.remove_button.pack(side=tk.LEFT, padx=6)
@@ -327,7 +446,7 @@ class PluginConfigWindow(object):
         self.new()
 
     def language_changed(self):
-        """Texts in the list ('ja'/'nein'); labels and buttons are translated by set_language."""
+        """Texts in the list (the mode); labels and buttons are translated by set_language."""
         selection = self.tree.selection()
         self.refresh(select=int(selection[0]) if selection else None)
 
@@ -336,7 +455,7 @@ class PluginConfigWindow(object):
         tree.delete(*tree.get_children())
         for index, plugin in enumerate(self.plugins):
             tree.insert('', tk.END, iid=str(index), values=(
-                plugin['name'], plugin['script'], tr('ja') if plugin['pass_trace'] else tr('nein'),
+                plugin['name'], plugin['script'], tr(dict(MODES)[plugin['mode']]),
                 plugin['arguments']))
         if select is not None:
             tree.selection_set(str(select))
@@ -351,7 +470,7 @@ class PluginConfigWindow(object):
         self.name_var.set(plugin['name'])
         self.script_var.set(plugin['script'])
         self.arguments_var.set(plugin['arguments'])
-        self.trace_var.set(plugin['pass_trace'])
+        self.mode_var.set(plugin['mode'])
         self.form_title.set(tr('Plugin bearbeiten'))
         self.save_button.configure(text=tr('Übernehmen'))
         self.remove_button.state(['!disabled'])
@@ -361,7 +480,7 @@ class PluginConfigWindow(object):
         self.tree.selection_set(())
         for variable in (self.name_var, self.script_var, self.arguments_var):
             variable.set('')
-        self.trace_var.set(True)
+        self.mode_var.set('trace')
         self.form_title.set(tr('Neues Plugin'))
         self.save_button.configure(text=tr('Hinzufügen'))
         self.remove_button.state(['disabled'])
@@ -383,14 +502,14 @@ class PluginConfigWindow(object):
             if not path.lower().endswith('.py') or not os.path.isfile(path):
                 rejected.append(os.path.basename(path))
                 continue
-            plugin = normalize_plugins([{'script': stored_script(path), 'pass_trace': True}])[0]
+            plugin = normalize_plugins([{'script': stored_script(path), 'mode': 'trace'}])[0]
             self.plugins.append(plugin)
             added.append(plugin['name'])
         if added:
             self.on_change([dict(item) for item in self.plugins])
             self.refresh(select=len(self.plugins) - 1)
             self.on_select()  # the form shows the last added plugin, e.g. to add arguments
-            set_text(self.status, 'Hinzugefügt: %s – Name, Argumente und Trace-Haken lassen sich hier ändern '
+            set_text(self.status, 'Hinzugefügt: %s – Name, Argumente und Modus lassen sich hier ändern '
                                   '(Übernehmen).', ', '.join(added))
         if rejected:
             messagebox.showerror('CANtrix', tr('Nicht hinzugefügt (nur .py-Dateien):\n%s') % '\n'.join(rejected),
@@ -416,11 +535,11 @@ class PluginConfigWindow(object):
         plugin = normalize_plugins([{'name': self.name_var.get(),
                                      'script': stored_script(script_path({'script': script})),
                                      'arguments': self.arguments_var.get().strip(),
-                                     'pass_trace': self.trace_var.get()}])[0]
+                                     'mode': self.mode_var.get()}])[0]
         if self.editing is None:
             self.plugins.append(plugin)
             index = len(self.plugins) - 1
-            set_text(self.status, 'Plugin hinzugefügt: %s – Name, Argumente und Trace-Haken lassen sich jetzt '
+            set_text(self.status, 'Plugin hinzugefügt: %s – Name, Argumente und Modus lassen sich jetzt '
                                   'noch ändern (Übernehmen).', plugin['name'])
         else:
             index = self.editing
