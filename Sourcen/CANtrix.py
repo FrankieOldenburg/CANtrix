@@ -63,7 +63,7 @@ FILE_KINDS = ('database', 'trace', 'panel')  # files of a configuration
 SOURCES = (('trace', 'Trace'), ('live', 'Live'))  # Datenquelle der Viewer
 WINDOW_TITLES = {'database_viewer': 'Database Editor', 'trace_viewer': 'Trace Viewer',
                  'graph_viewer': 'Graph Viewer', 'panel_viewer': 'Panel Viewer', 'generator': 'Generator',
-                 'logic': 'Logic Analyzer (USBtingo)', 'ble': 'BLE Monitor'}  # Fenster, die gedockt werden können (Tab-Text)
+                 'logic': 'Logic Analyzer', 'ble': 'BLE Monitor'}  # Fenster, die gedockt werden können (Tab-Text)
 
 # Unterfenster: Schlüssel in der Konfiguration, Menütext
 WINDOWS = (
@@ -72,7 +72,7 @@ WINDOWS = (
     ('graph_viewer', 'Graph Viewer'),
     ('panel_viewer', 'Panel Viewer'),
     ('generator', 'Generator'),
-    ('logic', 'Logic Analyzer (USBtingo)'),
+    ('logic', 'Logic Analyzer'),
     ('ble', 'BLE Monitor'),
 )
 VIEWER_KEYS = ('trace_viewer', 'graph_viewer')  # the two windows of the shared trace viewer engine
@@ -211,7 +211,7 @@ def draw_generator_icon(canvas, color):
 
 
 def draw_logic_icon(canvas, color):
-    """Square wave: Logic Analyzer (USBtingo)."""
+    """Square wave: Logic Analyzer."""
     canvas.create_line(7, 20, 7, 11, 12, 11, 12, 20, 17, 20, 17, 11, 23, 11, **icon_line(icon_hue(5), 2))
     canvas.create_line(7, 24, 23, 24, **icon_line(C.MUTED))
 

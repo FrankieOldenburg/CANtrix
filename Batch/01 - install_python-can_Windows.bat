@@ -6,7 +6,7 @@ rem Installed for the current user with pip:
 rem   python-can              CAN interface library: live recording and sending (Trace Recorder, Generator)
 rem   python-can-usbtingo     python-can plugin for the USBtingo adapter (recording, Logic Analyzer)
 rem   lauterbach-trace32-rcl  remote API of Lauterbach TRACE32 (reading variables in the Trace Viewer)
-rem   pyserial                serial port access for OBDLink / ELM327 adapters
+rem   pyserial                serial port access: sigrok-pico (Logic Analyzer), OBDLink / ELM327 adapters
 rem   bleak                   Bluetooth Low Energy library (BLE Monitor)
 rem Only python-can is required; without one of the other packages only its function is missing.
 

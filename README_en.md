@@ -25,6 +25,7 @@ Depending on the CAN device (chosen under "Settings > CAN Trace Recorder > Inter
 - **Vector devices (VN, VX, VH, … – any model the Vector driver supports):** the Vector driver (Vector XL Driver Library, vxlapi64.dll), Windows only.
 - **USBtingo:** the plugin `python-can-usbtingo` and, on macOS, the libusb library (Windows includes it); no separate driver is needed.
 - **OBDLink MX+ / ELM327:** `pyserial` and a serial port for the adapter.
+- **sigrok-pico (Logic Analyzer):** `pyserial` and a Raspberry Pi Pico with the firmware sigrok-pico, see chapter "Logic Analyzer".
 - **TRACE32 (variables in the Trace Viewer):** the package `lauterbach-trace32-rcl` (`pip3 install --user lauterbach-trace32-rcl`), see chapter "TRACE32 variables".
 
 ```bash
@@ -248,15 +249,46 @@ Moving the mouse over an element shows in the status bar what it is linked to an
 
 Messages are sent over the connection of the recording: choose the data source "Live" and press "Start". The entries (without the state "cyclic") are saved in the configuration; nothing sends on its own.
 
-### Logic Analyzer (USBtingo)
+### Logic Analyzer
 
-"View > Logic Analyzer (USBtingo)" opens a window laid out like PulseView: the time axis on top, below it the level of the CAN RX line (`CAN`), the individual bits (`CAN: Bits`, stuff bits blue) and the decoded CAN fields (`CAN: Fields`: ID, control bits, data bytes `DB`, CRC, ACK, EOF; also CAN FD with bit rate switching). For this the USBtingo samples the level of the CAN RX line (like "USBtingoGUI > Logic"); the recording is stored as a Sigrok file (`.sr`) that can also be opened in PulseView.
+"View > Logic Analyzer" opens a window laid out like PulseView: the time axis on top, below it one row per channel. One digital channel is decoded as CAN; right below it are the individual bits (`CAN: Bits`, stuff bits blue) and the CAN fields (`CAN: Fields`: ID, control bits, data bytes `DB`, CRC, ACK, EOF; also CAN FD with bit rate switching). The CRC is shown but not checked.
 
-- **Recording:** the red dot starts and the red square stops the recording; it is then shown. If a live recording with the USBtingo is already running, its connection is shared, otherwise the window opens the USBtingo itself. This needs `python-can` and `python-can-usbtingo` (chapter "Installation"; on macOS also libusb).
-- **Settings:** bit rate, CAN FD and data rate control the decoding (default from "Settings > CAN Trace Recorder"); a change decodes again. "Sample rate" applies to the next recording ("Auto" = ten times the bit rate or data rate). Decoding needs at least 4 samples per bit.
-- **Operation:** the mouse wheel zooms, dragging pans (also Shift+wheel and the scroll bar), a double click on a bit or field zooms to it. Hovering over a bit or field shows its meaning and time in the status bar. "Show all" shows the whole recording.
-- **Files:** the open icon loads a Sigrok file (`.sr`, one channel or the channel `CAN`), the save icon copies the recording to a place of your choice.
-- The CRC is shown but not checked.
+Recording uses either a USBtingo or a sigrok-pico (field "Device"). The recording is stored as a Sigrok file (`.sr`).
+
+| Device | Channels | Needs |
+|---|---|---|
+| USBtingo | the CAN RX line | `python-can`, `python-can-usbtingo`, on macOS libusb |
+| sigrok-pico | up to 21 digital and 3 analog | `pyserial` (no sigrok-cli) |
+
+- **Recording:** the red dot starts and the red square stops the recording; it is then shown.
+- **USBtingo:** samples the level of the CAN RX line (like "USBtingoGUI > Logic"). If a live recording with the USBtingo is already running, its connection is shared, otherwise the window opens the USBtingo itself.
+
+**sigrok-pico**
+
+A Raspberry Pi Pico with the firmware sigrok-pico (github.com/pico-coder/sigrok-pico), connected by USB.
+
+**Caution:** all inputs of the Pico, the analog ones too, tolerate 3.3 V only. If a source delivers 5 V (e.g. the RXD output of many CAN transceivers), a level shifter or voltage divider is required. Ground must be connected.
+
+| Channel | Pin of the Pico |
+|---|---|
+| D2 to D22 (digital) | GP2 to GP22 |
+| A0 to A2 (analog, 0 to 3.3 V, 7 bit) | GP26 to GP28 |
+
+- **Port:** "Auto" finds the Pico itself, otherwise select or enter the serial port.
+- **Channels…:** selects the channels to record, per group also "All" or "None". D2 is preset.
+- **CAN channel:** sets which digital channel is decoded. It can also be changed after recording.
+- **Analog channels:** with 1, 2 or 3 analog channels the sample rate is at most 400, 240 or 160 kHz, for the digital channels too; a higher choice is limited to this. For decoding that is enough only up to 100, 60 or 40 kbit/s. Therefore record faster CAN buses without analog channels.
+- **Overflow:** the Pico sends the data over USB while it is recording. If there is too much (high sample rate, many changing channels, high bus load) it aborts; the recording up to that point is shown with a note. D2 to D5 without analog channels produce the least data.
+- **Length:** very long recordings are truncated (with 21 channels after about 24 million samples). When stopping, the last fraction of a second may be missing.
+
+**Settings, operation and files**
+
+- **Decoding:** bit rate, CAN FD and data rate (default from "Settings > CAN Trace Recorder"); a change decodes again. At least 4 samples per bit are needed.
+- **Sample rate:** applies to the next recording. "Auto" chooses about ten times the bit rate or data rate.
+- **Zooming and panning:** the mouse wheel zooms, dragging pans (also Shift+wheel and the scroll bar), a double click on a bit or field zooms to it. "Show all" shows the whole recording.
+- **Many channels:** scroll vertically with the scroll bar on the right or the mouse wheel over the channel names.
+- **Reading values:** hovering over a bit, a field or an analog channel shows its meaning or voltage and the time in the status bar.
+- **Files:** the open icon loads a Sigrok file (`.sr`, also with several digital and analog channels; the "CAN channel" is decoded, otherwise the channel `CAN` or the first one). The save icon copies the recording to a place of your choice.
 
 ### BLE Monitor
 

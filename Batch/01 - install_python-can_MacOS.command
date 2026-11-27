@@ -7,7 +7,7 @@
 #   python-can              CAN interface library: live recording and sending (Trace Recorder, Generator)
 #   python-can-usbtingo     python-can plugin for the USBtingo adapter (recording, Logic Analyzer)
 #   lauterbach-trace32-rcl  remote API of Lauterbach TRACE32 (reading variables in the Trace Viewer)
-#   pyserial                serial port access for OBDLink / ELM327 adapters
+#   pyserial                serial port access: sigrok-pico (Logic Analyzer), OBDLink / ELM327 adapters
 #   bleak                   Bluetooth Low Energy library (BLE Monitor)
 # Installed with Homebrew:
 #   libusb                  USB access library needed by the USBtingo

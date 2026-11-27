@@ -1,9 +1,10 @@
-"""Logic Analyzer (USBtingo): Logikpegel der CAN-RX-Leitung aufzeichnen, anzeigen und als CAN dekodieren.
+"""Logic Analyzer (USBtingo oder sigrok-pico): Pegel aufzeichnen, anzeigen und einen Kanal als CAN dekodieren.
 
-Das Fenster zeigt wie PulseView drei Zeilen: den Pegelverlauf, die einzelnen Bits (Stuff-Bits blau) und die
-CAN-Felder (ID, Steuerbits, Datenbytes, CRC, EOF …). Aufzeichnungen (Sigrok-Dateien `.sr`, auch in PulseView
-lesbar) kommen vom USBtingo (`recording_start`/`recording_stop` des python-can-Plugins `python-can-usbtingo`)
-oder aus einer Datei. Lesen und Dekodieren brauchen nur die Standardbibliothek (Python 3.6).
+Das Fenster zeigt wie PulseView je Kanal (beim sigrok-pico bis zu 21 digitale und 3 analoge) eine Zeile, unter dem
+CAN-Kanal die einzelnen Bits (Stuff-Bits blau) und die CAN-Felder (ID, Steuerbits, Datenbytes, CRC, EOF …).
+Aufzeichnungen (Sigrok-Dateien `.sr`) kommen vom USBtingo (`recording_start`/`recording_stop` des python-can-Plugins
+`python-can-usbtingo`), von einem sigrok-pico (`CAN_SigrokPico.py`) oder aus einer Datei. Lesen und Dekodieren
+brauchen nur die Standardbibliothek (Python 3.6).
 """
 import bisect
 import contextlib
@@ -12,6 +13,7 @@ import os
 import queue
 import re
 import shutil
+import sys
 import tempfile
 import threading
 import time
@@ -25,16 +27,19 @@ try:
 except ImportError:  # pragma: no cover
     tk = None
 
-from CAN_Common import C, Theme, draw_open_icon, draw_save_icon, icon_hue, icon_line, initial_geometry, \
-    window_geometry
+from CAN_Common import C, Theme, apply_appearance, attach_dialog, draw_open_icon, draw_save_icon, icon_hue, \
+    icon_line, initial_geometry, window_geometry
 from CAN_Language import language, set_text, tr
+from CAN_SigrokPico import ANALOG, DIGITAL, PicoRecording, analog_limit, automatic_rate, list_ports
 
 BITRATES = [10000, 20000, 50000, 100000, 125000, 250000, 500000, 800000, 1000000]
 DATA_BITRATES = [1000000, 2000000, 4000000, 5000000, 8000000]
 SAMPLE_RATES = [1000000, 2000000, 5000000, 10000000, 20000000, 40000000]  # of the USBtingo: 120 MHz / 3 … 255
+PICO_RATES = [10000, 50000, 100000, 160000, 240000, 400000, 500000] + SAMPLE_RATES + [60000000, 120000000]
 SAMPLE_POINT = 0.75
 DLC_LENGTHS = (0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 20, 24, 32, 48, 64)
 MIN_SAMPLES_PER_BIT = 4
+DEVICES = ('USBtingo', 'sigrok-pico')  # recording hardware
 
 _CWD_LOCK = threading.Lock()
 
@@ -42,8 +47,8 @@ _CWD_LOCK = threading.Lock()
 # ---------------------------------------------------------------- Sigrok files
 
 def read_sigrok(path):
-    """Reads a Sigrok session file (`.sr`, a zip): returns (sample rate in Hz, levels of the channel 'CAN' (or the
-    first one) as bytes with 0/1 per sample)."""
+    """Reads a Sigrok session file (`.sr`, a zip): returns {'rate': Hz, 'digital': [(name, levels as bytes with 0/1
+    per sample)], 'analog': [(name, array 'f' of volts)]}."""
     with zipfile.ZipFile(path) as archive:
         names = archive.namelist()
         if 'metadata' not in names:
@@ -55,24 +60,33 @@ def read_sigrok(path):
         rate = float(match.group(1)) * {'': 1, 'k': 1e3, 'm': 1e6, 'g': 1e9}[match.group(2).lower()]
         unit = int((re.search(r'^unitsize=\s*(\d+)', meta, re.M) or [0, 1])[1]) or 1
         capture = (re.search(r'^capturefile=\s*(\S+)', meta, re.M) or [0, 'logic-1'])[1]
-        probe = 0
-        for number, name in re.findall(r'^probe(\d+)=\s*(.*?)\s*$', meta, re.M):
-            if name.upper() == 'CAN':
-                probe = int(number) - 1
-                break
-        chunks = []
-        for name in names:
-            found = re.fullmatch(re.escape(capture) + r'-(\d+)', name)
-            if found:
-                chunks.append((int(found.group(1)), name))
-        if not chunks:
+
+        def chunks(prefix):
+            found = [(re.fullmatch(re.escape(prefix) + r'-(\d+)', name), name) for name in names]
+            found = sorted((int(match.group(1)), name) for match, name in found if match)
+            return b''.join(archive.read(name) for _, name in found)
+
+        probes = [(int(number) - 1, name) for number, name in re.findall(r'^probe(\d+)=\s*(.*?)\s*$', meta, re.M)]
+        data = chunks(capture)
+        if data and not probes:
+            probes = [(0, 'CAN')]
+        digital = []
+        for bit, name in sorted(probes):
+            if data and bit // 8 < unit:
+                table = bytes((value >> (bit % 8)) & 1 for value in range(256))
+                digital.append((name, data[bit // 8::unit].translate(table)))
+        analog = []
+        for number, name in sorted((int(a), b) for a, b in re.findall(r'^analog(\d+)=\s*(.*?)\s*$', meta, re.M)):
+            raw = chunks('analog-1-%d' % number)
+            values = array('f')
+            values.frombytes(raw[:len(raw) // 4 * 4])
+            if sys.byteorder != 'little':
+                values.byteswap()
+            if values:
+                analog.append((name, values))
+        if not digital and not analog:
             raise ValueError(tr('Die Sigrok-Datei enthält keine Messdaten.'))
-        data = b''.join(archive.read(name) for _, name in sorted(chunks))
-    if unit > 1:
-        data = data[probe // 8::unit]
-    shift = probe % 8
-    table = bytes((value >> shift) & 1 for value in range(256))
-    return int(round(rate)), data.translate(table)
+    return {'rate': int(round(rate)), 'digital': digital, 'analog': analog}
 
 
 def find_edges(levels):
@@ -433,6 +447,8 @@ LABEL_WIDTH = 140
 RULER_HEIGHT = 30
 WAVE_HEIGHT = 64
 ROW_HEIGHT = 34
+CHANNEL_HEIGHT = 32  # digital channel when there are several
+ANALOG_HEIGHT = 60
 KIND_COLORS = {'id': 6, 'fullid': 4, 'data': 2, 'crc': 1, 'eof': 3, 'flag': 5, 'dlc': 7, 'ctrl': 7,
                'stuffcount': 5}
 DARK_TEXT = '#111827'
@@ -482,6 +498,19 @@ if tk is not None:
             self.data_bitrate = tk.StringVar(value=str(saved('data_bitrate', connection.get('data_bitrate', 2000000))))
             self.sample_rate = tk.StringVar(value=str(saved('sample_rate', 'Auto')))
             self.connection = dict(connection)
+            device = saved('device', DEVICES[0])
+            self.device = tk.StringVar(value=device if device in DEVICES else DEVICES[0])
+            self.port = tk.StringVar(value=str(saved('port', 'Auto')))
+            channels = saved('channels', [saved('input', DIGITAL[0])])
+            if not isinstance(channels, list):
+                channels = []
+            self.channels = dict((name, tk.BooleanVar(value=name in channels)) for name in ANALOG + DIGITAL)
+            if not self.selected_channels():
+                self.channels[DIGITAL[0]].set(True)
+            self.input = tk.StringVar(value=str(saved('input', DIGITAL[0])))  # channel decoded as CAN
+            self.channel_text = tk.StringVar()
+            self.channel_window = None
+            self.top = 0  # vertical scroll position (pixels)
             self._build_layout()
             root.title('CAN Logic Analyzer')
             root.minsize(760, 340)
@@ -493,7 +522,7 @@ if tk is not None:
 
         def _build_layout(self):
             theme = self.theme
-            theme.header(self.root, 'CAN Logic Analyzer', tr('USBtingo: Logikpegel der CAN-RX-Leitung'))
+            theme.header(self.root, 'CAN Logic Analyzer', tr('Logik- und Analogkanäle, CAN-Dekodierung'))
             theme.footer(self.root, self.status)
             body = tk.Frame(self.root, background=C.APP_BG)
             body.pack(fill=tk.BOTH, expand=True, padx=12, pady=12)
@@ -502,7 +531,7 @@ if tk is not None:
             buttons = (
                 ('open', draw_open_icon, self.open_file, tr('Aufzeichnung öffnen… (Sigrok-Datei .sr)')),
                 ('save', draw_save_icon, self.save_file, tr('Aufzeichnung speichern unter…')),
-                ('record', draw_record_icon, self.start_recording, tr('Aufzeichnung starten (USBtingo)')),
+                ('record', draw_record_icon, self.start_recording, tr('Aufzeichnung starten')),
                 ('stop', draw_stop_square_icon, self.stop_recording, tr('Aufzeichnung beenden')),
                 ('zoom_in', draw_zoom_icon(True), lambda: self.zoom(0.5), tr('Hineinzoomen')),
                 ('zoom_out', draw_zoom_icon(False), lambda: self.zoom(2.0), tr('Herauszoomen')),
@@ -513,6 +542,24 @@ if tk is not None:
                 button = theme.icon_button(bar, draw, command, tip)
                 button.pack(side=tk.LEFT, padx=(8 if key in ('open', 'zoom_in') else 2, 2), pady=3)
                 self.buttons[key] = button
+            source = ttk.Frame(card, padding=(12, 8, 12, 0))
+            source.pack(side=tk.TOP, fill=tk.X)
+            ttk.Label(source, text=tr('Gerät:')).pack(side=tk.LEFT)
+            self.device_box = ttk.Combobox(source, textvariable=self.device, values=DEVICES, state='readonly',
+                                           width=12)
+            self.device_box.pack(side=tk.LEFT, padx=(4, 12))
+            self.device_box.bind('<<ComboboxSelected>>', lambda event: self._update_device())
+            self.pico_row = ttk.Frame(source)  # only for the sigrok-pico
+            ttk.Label(self.pico_row, text=tr('Anschluss:')).pack(side=tk.LEFT)
+            self.port_box = ttk.Combobox(self.pico_row, textvariable=self.port, width=24,
+                                         postcommand=self._update_ports)
+            self.port_box.pack(side=tk.LEFT, padx=(4, 12))
+            self.channel_button = ttk.Button(self.pico_row, text=tr('Kanäle…'), command=self.choose_channels)
+            self.channel_button.pack(side=tk.LEFT)
+            ttk.Label(self.pico_row, textvariable=self.channel_text).pack(side=tk.LEFT, padx=(6, 12))
+            self.input_label = ttk.Label(source, text=tr('CAN-Kanal:'))
+            self.input_box = ttk.Combobox(source, textvariable=self.input, state='readonly', width=6)
+            self.input_box.bind('<<ComboboxSelected>>', lambda event: self._can_changed())
             settings = ttk.Frame(card, padding=(12, 8, 12, 4))
             settings.pack(side=tk.TOP, fill=tk.X)
             ttk.Label(settings, text=tr('Bitrate:')).pack(side=tk.LEFT)
@@ -525,17 +572,20 @@ if tk is not None:
                                                 width=9)
             data.pack(side=tk.LEFT, padx=(4, 12))
             ttk.Label(settings, text=tr('Abtastrate (Aufzeichnung):')).pack(side=tk.LEFT, padx=(8, 0))
-            rate = ttk.Combobox(settings, textvariable=self.sample_rate, values=['Auto'] + SAMPLE_RATES, width=10)
+            rate = self.rate_box = ttk.Combobox(settings, textvariable=self.sample_rate, width=10)
             rate.pack(side=tk.LEFT, padx=(4, 0))
             for box in (bitrate, data, rate):
                 box.bind('<<ComboboxSelected>>', lambda event: self._settings_changed())
                 box.bind('<Return>', lambda event: self._settings_changed())
                 box.bind('<FocusOut>', lambda event: self._settings_changed())
             self._update_data_box()
+            self._update_device()
             area = tk.Frame(card, background=C.SURFACE)
             area.pack(fill=tk.BOTH, expand=True, padx=1, pady=(4, 1))
             self.scroll = ttk.Scrollbar(area, orient=tk.HORIZONTAL, command=self._on_scrollbar)
             self.scroll.pack(side=tk.BOTTOM, fill=tk.X)
+            self.vscroll = ttk.Scrollbar(area, orient=tk.VERTICAL, command=self._on_vscrollbar)
+            self.vscroll.pack(side=tk.RIGHT, fill=tk.Y)
             self.canvas = tk.Canvas(area, background=C.SURFACE, highlightthickness=0, height=240)
             self.canvas.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
             self.font = tkfont.Font(font=theme.font_axis)
@@ -551,6 +601,118 @@ if tk is not None:
             canvas.bind('<Double-Button-1>', self._on_double)
             canvas.bind('<Motion>', self._on_motion)
             canvas.bind('<Leave>', lambda event: self._show_hover(None))
+
+        def _update_device(self):
+            pico = self.device.get() == 'sigrok-pico'
+            if pico:
+                self.pico_row.pack(side=tk.LEFT, after=self.device_box)
+            else:
+                self.pico_row.pack_forget()
+                self._close_channels()
+            self.rate_box.configure(values=['Auto'] + (PICO_RATES if pico else SAMPLE_RATES))
+            self._update_channels()
+
+        def selected_channels(self):
+            return [name for name in ANALOG + DIGITAL if self.channels[name].get()]
+
+        def _can_choices(self):
+            """Channels that can be decoded: of the capture, without one those selected for recording."""
+            if self.capture is not None:
+                return [name for name, _, _ in self.capture['digital']]
+            if self.device.get() == 'sigrok-pico':
+                return [name for name in DIGITAL if self.channels[name].get()]
+            return []
+
+        def can_channel(self):
+            """Name of the channel of the capture that is decoded as CAN, or None."""
+            names = self._can_choices()
+            if not names:
+                return None
+            if self.input.get() in names:
+                return self.input.get()
+            return next((name for name in names if name.upper() == 'CAN'), names[0])
+
+        def _update_channels(self):
+            """Texts of the channel selection and the choice of the CAN channel."""
+            parts = []
+            for group in (ANALOG, DIGITAL):
+                chosen = [name for name in group if self.channels[name].get()]
+                if len(chosen) > 2 and group.index(chosen[-1]) - group.index(chosen[0]) == len(chosen) - 1:
+                    parts.append('%s–%s' % (chosen[0], chosen[-1]))
+                elif len(chosen) > 4:
+                    parts.append('%d × %s' % (len(chosen), group[0][0]))
+                else:
+                    parts.extend(chosen)
+            self.channel_text.set(', '.join(parts))
+            names = self._can_choices()
+            self.input_box.configure(values=names)
+            if self.can_channel() is not None:
+                self.input.set(self.can_channel())
+            if len(names) > 1 or (names and self.device.get() == 'sigrok-pico'):
+                self.input_label.pack(side=tk.LEFT)
+                self.input_box.pack(side=tk.LEFT, padx=(4, 0))
+            else:
+                self.input_label.pack_forget()
+                self.input_box.pack_forget()
+
+        def _can_changed(self):
+            if self.capture is not None:
+                self._use_can_channel()
+                self.decoded = None
+                self.render()
+                self._start_decode()
+
+        def _use_can_channel(self):
+            """Take over levels and edges of the CAN channel into the capture."""
+            name = self.can_channel()
+            found = next((entry for entry in self.capture['digital'] if entry[0] == name), None)
+            self.capture['can'] = name
+            self.capture['levels'], self.capture['edges'] = found[1:] if found else (None, None)
+
+        # ------------------------------------------------------------ channel selection
+
+        def choose_channels(self):
+            if self.channel_window is not None:
+                self.channel_window.lift()
+                self.channel_window.focus_force()
+                return
+            window = self.channel_window = tk.Toplevel(self.root)
+            apply_appearance(window)
+            window.title(tr('Kanalauswahl'))
+            window.resizable(False, False)
+            attach_dialog(window, self.root)
+            theme = Theme(window)
+            body = tk.Frame(window, background=C.APP_BG)
+            body.pack(fill=tk.BOTH, expand=True, padx=12, pady=12)
+            for title, group in ((tr('Analog'), ANALOG), (tr('Digital'), DIGITAL)):
+                card, bar = theme.pane(body, title)
+                card.pack(fill=tk.X, pady=(0, 10))
+                for text, value in ((tr('Keine'), False), (tr('Alle'), True)):
+                    ttk.Button(bar, text=text, command=lambda group=group, value=value:
+                               self._set_channels(group, value)).pack(side=tk.RIGHT, padx=2)
+                grid = ttk.Frame(card, padding=(12, 8))
+                grid.pack(fill=tk.X)
+                for index, name in enumerate(group):
+                    ttk.Checkbutton(grid, text=name, variable=self.channels[name],
+                                    command=self._update_channels).grid(row=index // 7, column=index % 7,
+                                                                        sticky=tk.W, padx=(0, 14), pady=2)
+            ttk.Label(body, text=tr('Analog: höchstens 400 / 240 / 160 kHz bei 1 / 2 / 3 Kanälen.')).pack(anchor=tk.W)
+            ttk.Button(body, text=tr('Schließen'), command=self._close_channels).pack(anchor=tk.E, pady=(8, 0))
+            window.protocol('WM_DELETE_WINDOW', self._close_channels)
+            window.bind('<Escape>', lambda event: self._close_channels())
+
+        def _set_channels(self, group, value):
+            for name in group:
+                self.channels[name].set(value)
+            self._update_channels()
+
+        def _close_channels(self):
+            if self.channel_window is not None:
+                self.channel_window.destroy()
+                self.channel_window = None
+
+        def _update_ports(self):
+            self.port_box.configure(values=['Auto'] + list_ports())
 
         def _settings_changed(self):
             self._update_data_box()
@@ -570,6 +732,12 @@ if tk is not None:
                                  ('zoom_in', self.capture is not None), ('zoom_out', self.capture is not None),
                                  ('fit', self.capture is not None)):
                 self.buttons[key].state(['!disabled' if enabled else 'disabled'])
+            self.device_box.configure(state='readonly' if idle else 'disabled')
+            self.port_box.configure(state='normal' if idle else 'disabled')
+            self.input_box.configure(state='readonly' if idle else 'disabled')
+            self.channel_button.state(['!disabled' if idle else 'disabled'])
+            if not idle:
+                self._close_channels()
 
         # ------------------------------------------------------------ rates
 
@@ -629,8 +797,10 @@ if tk is not None:
 
             def work():
                 try:
-                    rate, levels = read_sigrok(path)
-                    capture = {'path': path, 'rate': rate, 'levels': levels, 'edges': find_edges(levels),
+                    data = read_sigrok(path)
+                    digital = [(name, levels, find_edges(levels)) for name, levels in data['digital']]
+                    capture = {'path': path, 'rate': data['rate'], 'digital': digital, 'analog': data['analog'],
+                               'samples': max(len(entry[1]) for entry in data['digital'] + data['analog']),
                                'name': os.path.basename(path)}
                     self.queue.put(('capture', job, capture))
                 except Exception as error:
@@ -641,6 +811,11 @@ if tk is not None:
         def _start_decode(self):
             self.decode_job = None
             if self.capture is None:
+                return
+            if self.capture['levels'] is None:  # analog channels only
+                self.busy = False
+                self._update_buttons()
+                self._capture_status()
                 return
             try:
                 nominal, data = self.rates()
@@ -692,12 +867,16 @@ if tk is not None:
                     self.recording = None
                     self._update_buttons()
                     if payload.get('error'):
+                        shutil.rmtree(payload['folder'], ignore_errors=True)
                         set_text(self.status, 'Aufzeichnung fehlgeschlagen: %s', payload['error'])
                         messagebox.showerror('CAN Logic Analyzer', payload['error'], parent=self.root)
                     else:
                         self._forget_temp()
                         self.temp_folder = payload['folder']
                         self.load(payload['path'])
+                        if payload.get('notes'):
+                            messagebox.showwarning('CAN Logic Analyzer', '\n\n'.join(payload['notes']),
+                                                   parent=self.root)
                     continue
                 if job != self.job:
                     continue
@@ -707,6 +886,9 @@ if tk is not None:
                     self.capture = payload
                     self._fresh = True
                     self.decoded = None
+                    self.top = 0
+                    self._update_channels()
+                    self._use_can_channel()
                     self.fit()
                     self.busy = False
                     self._start_decode()
@@ -714,7 +896,7 @@ if tk is not None:
                     self.decoded = payload
                     self.busy = False
                     self._update_buttons()
-                    self._decoded_status()
+                    self._capture_status()
                     self._fit_first_frame()
                     self.render()
                 elif kind == 'decode_error':
@@ -731,12 +913,16 @@ if tk is not None:
             if self.busy or self.recording is not None:
                 self.poll_job = self.root.after(60, self._poll_now)
 
-        def _decoded_status(self):
+        def _capture_status(self):
             capture = self.capture
-            seconds = len(capture['levels']) / float(capture['rate'])
-            set_text(self.status, '%s: %s Frames, %s Abtastwerte, %s MHz, %s',
-                     capture['name'], '%d' % len(self.decoded['frames']), '{:,}'.format(len(capture['levels'])),
-                     '%g' % (capture['rate'] / 1e6), time_text(seconds))
+            seconds = capture['samples'] / float(capture['rate'])
+            samples, rate = '{:,}'.format(capture['samples']), '%g' % (capture['rate'] / 1e6)
+            if self.decoded is None:
+                set_text(self.status, '%s: %s Abtastwerte, %s MHz, %s', capture['name'], samples, rate,
+                         time_text(seconds))
+            else:
+                set_text(self.status, '%s: %s Frames, %s Abtastwerte, %s MHz, %s', capture['name'],
+                         '%d' % len(self.decoded['frames']), samples, rate, time_text(seconds))
 
         def _fit_first_frame(self):
             """After loading: show the first frame (otherwise everything stays)."""
@@ -761,6 +947,9 @@ if tk is not None:
                                                              'ganze Zahlen sein.'), parent=self.root)
                 return
             if sampling is not None and sampling <= 0:
+                return
+            if self.device.get() == 'sigrok-pico':
+                self._start_pico(sampling, max(nominal, data or 0))
                 return
             bus = self.get_bus() if self.get_bus is not None else None
             connection = dict(self.connection)
@@ -804,11 +993,47 @@ if tk is not None:
             threading.Thread(target=work, daemon=True).start()
             self._poll()
 
+        def _start_pico(self, sampling, bitrate):
+            channels = self.selected_channels()
+            if not channels:
+                messagebox.showerror('CAN Logic Analyzer', tr('Es ist kein Kanal gewählt.'), parent=self.root)
+                return
+            port = self.port.get().strip()
+            port = None if port.lower() in ('', 'auto') else port
+            rate = sampling or automatic_rate(bitrate)
+            notes = []
+            count = len([name for name in channels if name in ANALOG])
+            if count and rate > analog_limit(count):
+                if sampling:
+                    notes.append(tr('Mit %d analogen Kanälen sind höchstens %d kHz möglich.')
+                                 % (count, analog_limit(count) // 1000))
+                rate = analog_limit(count)
+            self.capture, self.decoded = None, None  # the CAN channel choice is that of the recording again
+            self._update_channels()
+            self.render()
+            self.busy = True
+            self._update_buttons()
+            set_text(self.status, 'Aufzeichnung wird gestartet …')
+
+            def work():
+                folder = None
+                try:
+                    folder = tempfile.mkdtemp(prefix='canlogic')
+                    self.queue.put(('record_started', 0, {
+                        'pico': PicoRecording(port, channels, rate), 'notes': notes, 'folder': folder,
+                        'path': os.path.join(folder, 'sigrok_pico_capture.sr'), 'started': time.time()}))
+                except Exception as error:
+                    if folder:
+                        shutil.rmtree(folder, ignore_errors=True)
+                    self.queue.put(('record_error', 0, str(error) or error.__class__.__name__))
+            threading.Thread(target=work, daemon=True).start()
+            self._poll()
+
         def _recording_started(self, info):
             self.busy = False
             self.recording = info
-            info['draining'] = info['owned']
-            if info['owned']:  # nobody reads the CAN frames of an own connection: drop them
+            info['draining'] = info.get('owned', False)
+            if info.get('owned'):  # nobody reads the CAN frames of an own connection: drop them
                 def drain():
                     while info['draining']:
                         try:
@@ -822,6 +1047,10 @@ if tk is not None:
         def _tick(self):
             self.timer_job = None
             if self.recording is None:
+                return
+            pico = self.recording.get('pico')
+            if pico is not None and pico.finished():  # overflow or device removed
+                self.stop_recording()
                 return
             seconds = int(time.time() - self.recording['started'])
             set_text(self.status, 'Aufzeichnung läuft … %s s', '%d' % seconds)
@@ -840,13 +1069,16 @@ if tk is not None:
         def _stop_work(self, info):
             result = {'folder': info['folder'], 'path': info['path']}
             try:
-                with working_directory(info['folder']):
-                    info['bus'].recording_stop()
+                if 'pico' in info:
+                    result['notes'] = info['notes'] + info['pico'].stop(info['path'])
+                else:
+                    with working_directory(info['folder']):
+                        info['bus'].recording_stop()
             except Exception as error:
                 result['error'] = str(error) or error.__class__.__name__
             finally:
                 info['draining'] = False
-                if info['owned']:
+                if info.get('owned'):
                     try:
                         info['bus'].shutdown()
                     except Exception:
@@ -864,7 +1096,7 @@ if tk is not None:
             return max(1, self.canvas.winfo_width() - LABEL_WIDTH - 8)
 
         def _total(self):
-            return len(self.capture['levels']) if self.capture is not None else 0
+            return self.capture['samples'] if self.capture is not None else 0
 
         def _limit(self):
             """Keep the view inside the capture."""
@@ -895,9 +1127,20 @@ if tk is not None:
             self.view_start = anchor - x * self.spp
             self.render()
 
+        def _on_vscrollbar(self, action, *args):
+            height, content = self._heights()
+            if action == 'moveto':
+                self.top = float(args[0]) * content
+            elif action == 'scroll':
+                self.top += int(args[0]) * (height * 0.9 if args[1] == 'pages' else CHANNEL_HEIGHT)
+            self.render()
+
         def _on_wheel(self, event):
             delta = event.delta
-            if delta:
+            if delta and event.x < LABEL_WIDTH:  # over the channel names: scroll the channels
+                self.top -= CHANNEL_HEIGHT if delta > 0 else -CHANNEL_HEIGHT
+                self.render()
+            elif delta:
                 self.zoom(0.8 if delta > 0 else 1.25, event.x)
 
         def _on_pan_wheel(self, event):
@@ -940,17 +1183,44 @@ if tk is not None:
         # ------------------------------------------------------------ hover
 
         def _rows(self):
-            top = RULER_HEIGHT
-            return {'wave': (top, top + WAVE_HEIGHT), 'bits': (top + WAVE_HEIGHT, top + WAVE_HEIGHT + ROW_HEIGHT),
-                    'fields': (top + WAVE_HEIGHT + ROW_HEIGHT, top + WAVE_HEIGHT + 2 * ROW_HEIGHT)}
+            """Rows below the ruler: [(kind, name, data, top, bottom)] in canvas coordinates (scrolled).
+            kind: 'analog', 'digital', 'bits', 'fields'."""
+            if self.capture is None:
+                items = [('digital', 'CAN', None, WAVE_HEIGHT), ('bits', 'CAN: Bits', None, ROW_HEIGHT),
+                         ('fields', 'CAN: Fields', None, ROW_HEIGHT)]
+            else:
+                items = [('analog', name, values, ANALOG_HEIGHT) for name, values in self.capture['analog']]
+                single = len(self.capture['digital']) == 1 and not items
+                for name, levels, edges in self.capture['digital']:
+                    items.append(('digital', name, (levels, edges), WAVE_HEIGHT if single else CHANNEL_HEIGHT))
+                    if name == self.capture['can']:
+                        items.append(('bits', 'CAN: Bits', None, ROW_HEIGHT))
+                        items.append(('fields', 'CAN: Fields', None, ROW_HEIGHT))
+            rows, top = [], RULER_HEIGHT - int(self.top)
+            for kind, name, data, height in items:
+                rows.append((kind, name, data, top, top + height))
+                top += height
+            return rows
+
+        def _heights(self):
+            """(visible height, height of all rows) below the ruler."""
+            rows = self._rows()
+            return max(1, self.canvas.winfo_height() - RULER_HEIGHT), (rows[-1][4] - rows[0][3]) if rows else 0
 
         def _item_at(self, x, y):
-            """(start, end, text) of the bit or field under the pointer, or None."""
-            if self.decoded is None or self.capture is None or x < LABEL_WIDTH:
+            """(start, end, text) of the bit, field or analog value under the pointer, or None."""
+            if self.capture is None or x < LABEL_WIDTH or y < RULER_HEIGHT:
                 return None
             sample = self.view_start + (x - LABEL_WIDTH) * self.spp
-            rows, decoded = self._rows(), self.decoded
-            if rows['bits'][0] <= y < rows['bits'][1]:
+            decoded = self.decoded
+            row = next((row for row in self._rows() if row[3] <= y < row[4]), None)
+            if row is None:
+                return None
+            if row[0] == 'analog':
+                index = int(sample)
+                if 0 <= index < len(row[2]):
+                    return index, index + 1, '%s: %s V' % (row[1], number_text(row[2][index], 2))
+            elif row[0] == 'bits' and decoded is not None:
                 starts = decoded['starts']
                 index = bisect.bisect_right(starts, sample) - 1
                 if 0 <= index < len(starts) and sample < decoded['ends'][index]:
@@ -958,7 +1228,7 @@ if tk is not None:
                     kind = tr('Stuff-Bit') if flag & 2 else tr('Bit')
                     return (starts[index], decoded['ends'][index],
                             '%s: %d%s' % (kind, flag & 1, ' (%s)' % tr('Datenphase') if flag & 4 else ''))
-            elif rows['fields'][0] <= y < rows['fields'][1]:
+            elif row[0] == 'fields' and decoded is not None:
                 fields = decoded['fields']
                 index = bisect.bisect_right(decoded['field_starts'], sample) - 1
                 if 0 <= index < len(fields) and sample < fields[index][1]:
@@ -973,9 +1243,8 @@ if tk is not None:
                 return
             self.hover = item
             if item is None:
-                if self.decoded is not None and self.capture is not None and not self.busy \
-                        and self.recording is None:
-                    self._decoded_status()
+                if self.capture is not None and not self.busy and self.recording is None:
+                    self._capture_status()
                 return
             rate = self.capture['rate']
             self.status.set('%s · %s' % (item[2], time_text(item[0] / float(rate))))
@@ -995,29 +1264,47 @@ if tk is not None:
             if width < 50:
                 return
             self._limit()
+            height, content = self._heights()
+            self.top = max(0, min(self.top, content - height))
+            self.vscroll.set(self.top / float(content), min(1.0, (self.top + height) / float(content)))
             rows = self._rows()
-            tags = (('wave', 'CAN'), ('bits', 'CAN: Bits'), ('fields', 'CAN: Fields'))
-            canvas.create_line(LABEL_WIDTH - 4, 0, LABEL_WIDTH - 4, rows['fields'][1] + 30, fill=C.LINE)
+            bottom = max(canvas.winfo_height(), rows[-1][4])
             font = self.theme.font_axis
-            for key, name in tags:
-                top, bottom = rows[key]
-                middle = (top + bottom) / 2.0
-                if key == 'wave':
-                    canvas.create_rectangle(14, middle - 11, 62, middle + 11, fill=C.INK, outline='')
-                    canvas.create_text(38, middle, text=name, fill=C.SURFACE, font=font)
+            if self.capture is not None:
+                self._draw_grid(width, bottom)
+            number = 0
+            for kind, name, data, top, end in rows:
+                if end < RULER_HEIGHT or top > canvas.winfo_height():
+                    number += kind in ('analog', 'digital')
+                    continue
+                middle = (top + end) / 2.0
+                if kind in ('analog', 'digital'):
+                    if self.capture is None or (len(self.capture['digital']) == 1 and not self.capture['analog']):
+                        fill, ink = C.INK, C.SURFACE
+                    else:
+                        fill, ink = C.SERIES_COLORS[number % len(C.SERIES_COLORS)], DARK_TEXT
+                    number += 1
+                    canvas.create_rectangle(14, middle - 10, 62, middle + 10, fill=fill, outline='')
+                    canvas.create_text(38, middle, text=name, fill=ink, font=font)
                 else:
                     canvas.create_text(14, middle, text='▸ ' + name, fill=C.INK, font=font, anchor=tk.W)
+                if self.capture is None:
+                    continue
+                if kind == 'digital':
+                    self._draw_wave(width, (top, end), *data)
+                elif kind == 'analog':
+                    self._draw_analog(width, (top, end), data)
+                elif kind == 'bits' and self.decoded is not None:
+                    self._draw_bits(width, (top, end))
+                elif kind == 'fields' and self.decoded is not None:
+                    self._draw_fields(width, (top, end))
+            canvas.create_line(LABEL_WIDTH - 4, 0, LABEL_WIDTH - 4, bottom, fill=C.LINE)
             if self.capture is None:
-                canvas.create_text(LABEL_WIDTH + 20, rows['wave'][0] + 30, anchor=tk.W, fill=C.MUTED,
-                                   text=tr('Keine Aufzeichnung. Mit dem roten Punkt den USBtingo aufzeichnen lassen '
-                                           'oder eine Sigrok-Datei (.sr) öffnen.'), font=font)
-                self._update_scrollbar()
-                return
-            self._draw_ruler(width)
-            self._draw_wave(width, rows['wave'])
-            if self.decoded is not None:
-                self._draw_bits(width, rows['bits'])
-                self._draw_fields(width, rows['fields'])
+                canvas.create_text(LABEL_WIDTH + 20, rows[0][3] + 30, anchor=tk.W, fill=C.MUTED,
+                                   text=tr('Keine Aufzeichnung. Mit dem roten Punkt aufzeichnen oder eine Sigrok-Datei '
+                                           '(.sr) öffnen.'), font=font)
+            else:
+                self._draw_ruler(width)  # last: it covers rows scrolled below it
             self._update_scrollbar()
 
         def _update_scrollbar(self):
@@ -1031,41 +1318,54 @@ if tk is not None:
         def _x(self, sample):
             return LABEL_WIDTH + (sample - self.view_start) / self.spp
 
+        def _ticks(self):
+            """(step, tick times in seconds) of the time axis."""
+            rate = float(self.capture['rate'])
+            first, last = self.view_start / rate, (self.view_start + self._plot_width() * self.spp) / rate
+            step = nice_step(110 * self.spp / rate)
+            tick = math.ceil(first / step - 1e-9)
+            ticks = []
+            while tick * step <= last:
+                ticks.append(tick * step)
+                tick += 1
+            return step, ticks
+
+        def _draw_grid(self, width, bottom):
+            for seconds in self._ticks()[1]:
+                x = self._x(seconds * self.capture['rate'])
+                self.canvas.create_line(x, RULER_HEIGHT, x, bottom, fill=C.GRID)
+
         def _draw_ruler(self, width):
             canvas, rate = self.canvas, float(self.capture['rate'])
             font = self.theme.font_axis
-            first, last = self.view_start / rate, (self.view_start + self._plot_width() * self.spp) / rate
-            step = nice_step(110 * self.spp / rate)
+            step, ticks = self._ticks()
             factor, unit = time_unit(step)
             decimals = max(0, int(-math.floor(math.log10(step / factor) + 1e-9)))
-            tick = math.ceil(first / step - 1e-9)
-            bottom = self._rows()['fields'][1] + 30
-            while tick * step <= last:
-                seconds = tick * step
+            canvas.create_rectangle(0, 0, width, RULER_HEIGHT, fill=C.SURFACE, outline='')
+            canvas.create_line(LABEL_WIDTH - 4, 0, LABEL_WIDTH - 4, RULER_HEIGHT, fill=C.LINE)
+            for seconds in ticks:
                 x = self._x(seconds * rate)
                 canvas.create_line(x, RULER_HEIGHT - 8, x, RULER_HEIGHT, fill=C.MUTED)
-                canvas.create_line(x, RULER_HEIGHT, x, bottom, fill=C.GRID)
                 canvas.create_text(x, RULER_HEIGHT - 12, text='+' + number_text(seconds / factor, decimals) + ' ' + unit,
                                    fill=C.MUTED, font=font, anchor=tk.S)
-                tick += 1
             canvas.create_line(LABEL_WIDTH, RULER_HEIGHT, width, RULER_HEIGHT, fill=C.LINE)
 
-        def _draw_wave(self, width, row):
-            canvas, capture = self.canvas, self.capture
-            levels, edges = capture['levels'], capture['edges']
+        def _draw_wave(self, width, row, levels, edges):
+            canvas = self.canvas
             top, bottom = row
-            high, low = top + 10, bottom - 10
+            margin = min(10, (bottom - top) // 5)
+            high, low = top + margin, bottom - margin
             color = C.INK
             a = self.view_start
             b = a + self._plot_width() * self.spp
             lo, hi = bisect.bisect_left(edges, int(a) + 1), bisect.bisect_left(edges, int(b) + 1)
             canvas.create_rectangle(LABEL_WIDTH, top + 2, width - 4, bottom - 2, fill=C.APP_BG, outline='')
             if hi - lo > 2 * self._plot_width():  # too dense: only mark where the level changes
-                columns = set()
-                for index in range(lo, hi):
-                    columns.add(int(self._x(edges[index])))
-                for x in columns:
-                    canvas.create_line(x, high, x, low, fill=color)
+                for x in range(LABEL_WIDTH, width - 4):
+                    sample = a + (x - LABEL_WIDTH) * self.spp
+                    index = bisect.bisect_left(edges, int(sample))
+                    if index < len(edges) and edges[index] < sample + self.spp:
+                        canvas.create_line(x, high, x, low, fill=color)
                 return
             level = levels[min(int(a), len(levels) - 1)]
             x = float(LABEL_WIDTH)
@@ -1078,6 +1378,36 @@ if tk is not None:
             points += [width - 4, high if level else low]
             if len(points) >= 4:
                 canvas.create_line(*points, fill=color, width=1.5)
+
+        def _draw_analog(self, width, row, values):
+            """Voltage over time, 0 … 3.3 V (more if the file contains it)."""
+            canvas = self.canvas
+            top, bottom = row
+            canvas.create_rectangle(LABEL_WIDTH, top + 2, width - 4, bottom - 2, fill=C.APP_BG, outline='')
+            if 'range' not in self.capture:
+                self.capture['range'] = {}
+            if id(values) not in self.capture['range']:
+                self.capture['range'][id(values)] = (min(0.0, min(values)), max(3.3, max(values)))
+            low, high = self.capture['range'][id(values)]
+            scale = (bottom - top - 12) / (high - low)
+            y = lambda volts: bottom - 6 - (volts - low) * scale
+            canvas.create_text(66, bottom - 6, text='%g V' % round(low, 1), fill=C.MUTED, font=self.theme.font_axis,
+                               anchor=tk.SW)
+            canvas.create_text(66, top + 6, text='%g V' % round(high, 1), fill=C.MUTED, font=self.theme.font_axis,
+                               anchor=tk.NW)
+            points = []
+            if self.spp > 2:  # several samples per pixel: smallest and largest value of each column
+                for x in range(LABEL_WIDTH, width - 4):
+                    start = int(self.view_start + (x - LABEL_WIDTH) * self.spp)
+                    part = values[start:int(start + self.spp) + 1]
+                    if part:
+                        points += [x, y(min(part)), x, y(max(part))]
+            else:
+                end = min(len(values), int(self.view_start + self._plot_width() * self.spp) + 2)
+                for index in range(max(0, int(self.view_start)), end):
+                    points += [max(LABEL_WIDTH, min(width - 4, self._x(index))), y(values[index])]
+            if len(points) >= 4:
+                canvas.create_line(*points, fill=C.INK, width=1)
 
         def _hexagon(self, x0, x1, top, bottom, fill, text, text_color, outline=''):
             canvas = self.canvas
@@ -1136,7 +1466,9 @@ if tk is not None:
 
         def window_settings(self):
             return {'geometry': window_geometry(self.root), 'bitrate': self.bitrate.get(), 'fd': self.fd.get(),
-                    'data_bitrate': self.data_bitrate.get(), 'sample_rate': self.sample_rate.get()}
+                    'data_bitrate': self.data_bitrate.get(), 'sample_rate': self.sample_rate.get(),
+                    'device': self.device.get(), 'port': self.port.get(), 'input': self.input.get(),
+                    'channels': self.selected_channels()}
 
         def close(self):
             self.job += 1  # stops a running decoder
