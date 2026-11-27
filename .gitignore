@@ -172,3 +172,7 @@ Traces/BMW/TestTrace2_box2box.html
 Database/TRACE32/
 Database/VectorIO/
 CLAUDE.md
+Database/BMW/MessageCatalogue_EESystem25_26KW33_CAN_FD_IPB_41_patch_20261002.arxml.arxml
+Database/BMW/MessageCatalogue_EESystem25_26KW33_CAN_FD_IPB_41_patch_20261002.dbc
+Database/BMW/MessageCatalogue_EESystem25_26KW33_CAN_FD_IPB_41.html
+Plugins/FBD6_RangingStatistic_from_Trace/analyze_box2box.py
