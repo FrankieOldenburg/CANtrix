@@ -496,7 +496,7 @@ EN = {
     'Plugins sind Python-Skripte im Ordner %s': 'Plugins are Python scripts in the folder %s',
     'Neues Plugin': 'New plugin',
     'Plugin bearbeiten': 'Edit plugin',
-    'Python-Skripte im Ordner Plugins': 'Python scripts in the Plugins folder',
+    'Python-Skripte': 'Python scripts',
     'Konfigurierte Plugins': 'Configured plugins',
     'Skript': 'Script',
     'Argumente': 'Arguments',
@@ -515,11 +515,9 @@ EN = {
     'Python-Skript': 'Python script',
     'Hinzugefügt: %s – Name, Argumente und Trace-Haken lassen sich hier ändern (Übernehmen).':
         'Added: %s – name, arguments and the trace option can be changed here (Apply).',
-    'Nicht hinzugefügt (nur .py-Dateien aus dem Ordner Plugins):\n%s\n\n%s':
-        'Not added (only .py files from the Plugins folder):\n%s\n\n%s',
+    'Nicht hinzugefügt (nur .py-Dateien):\n%s': 'Not added (only .py files):\n%s',
     'Bitte ein Skript auswählen.': 'Please choose a script.',
     'Plugins müssen Python-Skripte (.py) sein.': 'Plugins must be Python scripts (.py).',
-    'Plugins müssen im Ordner Plugins liegen:\n%s': 'Plugins must be in the Plugins folder:\n%s',
     'Skript nicht gefunden:\n%s': 'Script not found:\n%s',
     'Die Argumente sind ungültig (%s).': 'The arguments are invalid (%s).',
     'Plugin hinzugefügt: %s – Name, Argumente und Trace-Haken lassen sich jetzt noch ändern (Übernehmen).':

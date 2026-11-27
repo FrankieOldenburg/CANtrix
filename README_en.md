@@ -380,7 +380,7 @@ Use **right-click → Copy to clipboard** to copy the same export as Vector ASC 
 
 ## Plugins
 
-Plugins are Python scripts in the folder `Plugins` (also in subfolders).
+Plugins are Python scripts. They can be in the folder `Plugins` (also in subfolders) or in any other folder. The configuration saves scripts from `Plugins` with a relative path and all others with the full path; on another computer these are only found under the same path.
 
 ### Setup
 

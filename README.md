@@ -382,7 +382,7 @@ Mit **Rechtsklick → In Zwischenablage kopieren** kopierst du denselben Export 
 
 ## Plugins
 
-Plugins sind Python-Skripte im Ordner `Plugins` (auch in Unterordnern).
+Plugins sind Python-Skripte. Sie können im Ordner `Plugins` (auch in Unterordnern) oder in einem beliebigen anderen Ordner liegen. Skripte aus `Plugins` speichert die Konfiguration mit relativem Pfad, alle anderen mit dem vollständigen Pfad; diese werden auf einem anderen Rechner nur unter demselben Pfad gefunden.
 
 ### Einrichten
 

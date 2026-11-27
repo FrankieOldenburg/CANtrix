@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Plugins des CANtrixs.
 
-Ein Plugin ist ein Python-Skript im Ordner Plugins/ (auch in Unterordnern). Der CANtrix
-startet es als eigenen Prozess im Ordner des Skripts und zeigt seine Ausgabe in einem Fenster.
+Ein Plugin ist ein Python-Skript, meist im Ordner Plugins/ (auch in Unterordnern), sonst
+beliebig. Der CANtrix startet es als eigenen Prozess im Ordner des Skripts und zeigt seine Ausgabe in einem Fenster.
 Optional bekommt es den Pfad des aktuell geladenen Traces als Argument.
 
 Eine Plugin-Einstellung ist ein dict:
-    {'name': Menütext, 'script': Pfad relativ zu Plugins/ (mit '/'),
+    {'name': Menütext, 'script': Pfad relativ zu Plugins/, außerhalb davon absolut (mit '/'),
      'arguments': zusätzliche Argumente, 'pass_trace': bool}
 Steht in den Argumenten der Platzhalter {trace}, wird dort der Trace-Pfad eingesetzt;
 sonst wird er (bei pass_trace) als letztes Argument angehängt.
@@ -49,14 +49,19 @@ def normalize_plugins(items):
 
 
 def script_path(plugin):
-    return os.path.normpath(os.path.join(PLUGINS_DIR, *plugin['script'].split('/')))
+    # join keeps an absolute script path as it is
+    return os.path.normpath(os.path.join(PLUGINS_DIR, plugin['script']))
 
 
-def relative_script(path):
-    """Path relative to the Plugins folder (with '/'), or None if the file is outside of it."""
-    relative = os.path.relpath(os.path.abspath(path), PLUGINS_DIR)
-    if relative == os.pardir or relative.startswith(os.pardir + os.sep) or os.path.isabs(relative):
-        return None
+def stored_script(path):
+    """How a script is saved: relative to the Plugins folder if inside it, else absolute (with '/')."""
+    path = os.path.abspath(path)
+    try:
+        relative = os.path.relpath(path, PLUGINS_DIR)
+    except ValueError:  # Windows: another drive
+        return path.replace(os.sep, '/')
+    if relative == os.pardir or relative.startswith(os.pardir + os.sep):
+        return path.replace(os.sep, '/')
     return relative.replace(os.sep, '/')
 
 
@@ -254,7 +259,7 @@ class PluginConfigWindow(object):
         self.arguments_var = tk.StringVar()
         self.trace_var = tk.BooleanVar(value=True)
         self.form_title = tk.StringVar(value=tr('Neues Plugin'))
-        theme.header(window, 'Plugins', tr('Python-Skripte im Ordner Plugins'))
+        theme.header(window, 'Plugins', tr('Python-Skripte'))
         theme.footer(window, self.status)
 
         body = tk.Frame(window, background=C.APP_BG)
@@ -362,7 +367,7 @@ class PluginConfigWindow(object):
         self.remove_button.state(['disabled'])
 
     def choose_script(self):
-        """Add one or more scripts from the Plugins folder as new plugins (also while one is being edited)."""
+        """Add one or more scripts as new plugins (also while one is being edited)."""
         if not os.path.isdir(PLUGINS_DIR):
             os.makedirs(PLUGINS_DIR)
         current = self.script_var.get().strip()
@@ -375,11 +380,10 @@ class PluginConfigWindow(object):
             return
         added, rejected = [], []
         for path in paths:
-            relative = relative_script(path)
-            if relative is None or not relative.lower().endswith('.py') or not os.path.isfile(path):
+            if not path.lower().endswith('.py') or not os.path.isfile(path):
                 rejected.append(os.path.basename(path))
                 continue
-            plugin = normalize_plugins([{'script': relative, 'pass_trace': True}])[0]
+            plugin = normalize_plugins([{'script': stored_script(path), 'pass_trace': True}])[0]
             self.plugins.append(plugin)
             added.append(plugin['name'])
         if added:
@@ -389,8 +393,7 @@ class PluginConfigWindow(object):
             set_text(self.status, 'Hinzugefügt: %s – Name, Argumente und Trace-Haken lassen sich hier ändern '
                                   '(Übernehmen).', ', '.join(added))
         if rejected:
-            messagebox.showerror('CANtrix', tr('Nicht hinzugefügt (nur .py-Dateien aus dem Ordner Plugins):'
-                                                    '\n%s\n\n%s') % ('\n'.join(rejected), PLUGINS_DIR),
+            messagebox.showerror('CANtrix', tr('Nicht hinzugefügt (nur .py-Dateien):\n%s') % '\n'.join(rejected),
                                  parent=self.window)
 
     def save(self):
@@ -400,8 +403,6 @@ class PluginConfigWindow(object):
             error = tr('Bitte ein Skript auswählen.')
         elif not script.lower().endswith('.py'):
             error = tr('Plugins müssen Python-Skripte (.py) sein.')
-        elif relative_script(script_path({'script': script})) is None:
-            error = tr('Plugins müssen im Ordner Plugins liegen:\n%s') % PLUGINS_DIR
         elif not os.path.isfile(script_path({'script': script})):
             error = tr('Skript nicht gefunden:\n%s') % script_path({'script': script})
         else:
@@ -412,7 +413,8 @@ class PluginConfigWindow(object):
         if error:
             messagebox.showerror('CANtrix', error, parent=self.window)
             return
-        plugin = normalize_plugins([{'name': self.name_var.get(), 'script': script,
+        plugin = normalize_plugins([{'name': self.name_var.get(),
+                                     'script': stored_script(script_path({'script': script})),
                                      'arguments': self.arguments_var.get().strip(),
                                      'pass_trace': self.trace_var.get()}])[0]
         if self.editing is None:
