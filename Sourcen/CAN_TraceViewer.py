@@ -537,6 +537,7 @@ if tk is not None:
             self.debugger_settings = normalize_settings(None)
             self._debug_environment_names = {}
             self.on_watch_database = None
+            self.config_name = lambda: ''  # name of the configuration, for the generated database
             self.on_live_environment = None
             self.debug_values = []  # [(time, name, text)] of the shown trace
             self._debug_queue = queue.Queue()
@@ -1001,7 +1002,7 @@ if tk is not None:
             names = watch_environment_names(dialog.result)
             old_path = self.debugger_settings.get('environment_database')
             try:
-                path = create_watch_database(names)
+                path = create_watch_database(names, config_name=self.config_name())
             except (OSError, ValueError) as error:
                 messagebox.showerror(tr('TRACE32-Variablen'),
                                      tr('TRACE32-Datenbasis konnte nicht erstellt werden: %s') % error,

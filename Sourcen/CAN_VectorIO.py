@@ -45,7 +45,7 @@ def normalize_vector_io(value):
     return result
 
 
-def create_vector_io_database(config, directory=None):
+def create_vector_io_database(config, directory=None, config_name=''):
     if not config['pins']:
         return None
     fields = {}
@@ -57,7 +57,7 @@ def create_vector_io_database(config, directory=None):
                             (config['model'], config['serial'], pin, key)}
             if kind == 'integer':
                 fields[name]['values'] = {0: 'Low', 1: 'High'}
-    return write_generated_dbc(fields, 'VectorIO', 'Vector-IO', directory)
+    return write_generated_dbc(fields, 'VectorIO', directory, config_name)
 
 
 def vector_io_devices(channels):

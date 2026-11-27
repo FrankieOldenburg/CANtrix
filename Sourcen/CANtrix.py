@@ -42,6 +42,7 @@ from CAN_RecorderSettings import (BITRATES as RECORDER_BITRATES, DATA_BITRATES a
 from CAN_TraceViewer import DASH, SectionWindow, absolute_time_text, de_int, natural_key, trace_channels
 from CAN_Traces import TraceConfigWindow, config_traces, load_traces, normalize_traces, trace_summary
 from CAN_VectorIO import VectorIODialog, create_vector_io_database, normalize_vector_io
+from CAN_DbcEditor import copy_generated_dbc, generated_category
 from CAN_TraceWriters import write_trace
 from CAN_Databases import (DatabaseConfigWindow, config_databases, database_summary, load_databases,
                            normalize_databases)
@@ -228,6 +229,11 @@ def draw_graph_icon(canvas, color):
 
 def config_types():
     return [(tr('CANtrix-Konfiguration'), '*.canconfig'), ('JSON', '*.json'), (tr('Alle Dateien'), '*')]
+
+
+def config_name(path):
+    """Name of a configuration file without folder and extension, '' if there is none."""
+    return os.path.splitext(os.path.basename(path or ''))[0]
 
 
 def existing_file(path):
@@ -1280,6 +1286,7 @@ if tk is not None:
                         engine.on_live = self._live_frames
                         engine.on_live_environment = self._live_environment
                         engine.on_watch_database = self._generated_database_changed
+                        engine.config_name = lambda: config_name(self.config_path)
                         engine.connection = self.recorder_connection()
                         engine.on_source_changed = self._source_rejected
                         engine.on_running_changed = self._recording_changed
@@ -1369,12 +1376,33 @@ if tk is not None:
             self.set_databases(entries)
 
         def _generated_database_changed(self, old_path, path):
+            category = generated_category(path) if path else None
             entries = [entry for entry in self.database_entries
-                       if not old_path or old_path == path or entry['path'] != old_path]
+                       if entry['path'] == path or (entry['path'] != old_path and
+                                                    (category is None or generated_category(entry['path']) != category))]
             if path and not any(entry['path'] == path for entry in entries):
                 entries.append({'path': path, 'channel': None})
-            if entries != self.database_entries:
+            if path or entries != self.database_entries:  # the same file may have new contents: read it again
                 self.set_databases(entries)
+
+        def _name_generated_databases(self, path):
+            """Before saving the configuration as `path`: its generated databases carry its name."""
+            renamed = {}
+            for entry in self.database_entries:
+                new = copy_generated_dbc(entry['path'], config_name(path))
+                if new != entry['path']:
+                    renamed[entry['path']] = new
+            if not renamed:
+                return
+            if self.vector_io and self.vector_io.get('database') in renamed:
+                self.vector_io = dict(self.vector_io, database=renamed[self.vector_io['database']])
+            viewer = self._viewer()
+            if viewer is not None:
+                old = viewer.debugger_settings.get('environment_database')
+                if old in renamed:
+                    viewer.debugger_settings['environment_database'] = renamed[old]
+            self.set_databases([dict(entry, path=renamed.get(entry['path'], entry['path']))
+                                for entry in self.database_entries])
 
         def _cursor_changed(self, moment):
             """Cursor set in the Trace Viewer: the Panel Viewer shows the values at that time. Without a Panel
@@ -1775,7 +1803,7 @@ if tk is not None:
             if config is None:
                 return
             try:
-                path = create_vector_io_database(config)
+                path = create_vector_io_database(config, config_name=config_name(self.config_path))
             except (OSError, ValueError) as error:
                 messagebox.showerror(tr('Vector I/O Configuration'),
                                      tr('Vector-I/O-Datenbasis konnte nicht erstellt werden: %s') % error,
@@ -2014,6 +2042,7 @@ if tk is not None:
 
         def write_config(self, path):
             try:
+                self._name_generated_databases(path)
                 with open(path, 'w', encoding='utf-8') as handle:
                     json.dump(self.collect_config(os.path.dirname(os.path.abspath(path))), handle, indent=2)
             except OSError as error:
@@ -2322,7 +2351,7 @@ if tk is not None:
             if path:
                 self.load_config(os.path.abspath(path))
 
-        def _restore_vector_io(self, saved, base, databases):
+        def _restore_vector_io(self, saved, base, databases, name=''):
             config = normalize_vector_io(saved)
             if config is None:
                 return None, databases
@@ -2330,7 +2359,7 @@ if tk is not None:
             path = saved_path if existing_file(saved_path) and config['pins'] else None
             if path is None:
                 try:
-                    path = create_vector_io_database(config)
+                    path = create_vector_io_database(config, config_name=name)
                 except (OSError, ValueError) as error:
                     messagebox.showerror(tr('Vector I/O Configuration'),
                                          tr('Vector-I/O-Datenbasis konnte nicht erstellt werden: %s') % error,
@@ -2360,7 +2389,7 @@ if tk is not None:
             panel_paths = [resolve_path(item, base) for item in config_panels(config)]
             if not self.close_windows():  # a window asks about unsaved changes
                 return
-            self.vector_io, databases = self._restore_vector_io(config.get('vector_io'), base, databases)
+            self.vector_io, databases = self._restore_vector_io(config.get('vector_io'), base, databases, config_name(path))
             missing = [entry['path'] for entry in databases + traces if not existing_file(entry['path'])]
             missing.extend(path for path in panel_paths if not existing_file(path))
             self.database = self.trace = None

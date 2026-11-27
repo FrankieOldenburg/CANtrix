@@ -167,3 +167,7 @@ Traces/BMW/live_localization.html
 Traces/BMW/TestTrace2_localization.html
 Traces/BMW/TestTrace2_analysis.html
 Traces/BMW/TestTrace2_box2box.html
+
+# Von CANtrix erzeugte Datenbasen (TRACE32-Watch, Vector I/O)
+Database/TRACE32/
+Database/VectorIO/

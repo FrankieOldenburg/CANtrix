@@ -199,7 +199,7 @@ Host and port in the dialog must match; for a local connection use `localhost` a
 
 Use **Open watch file…** to add `VAR.ADDWATCH` entries from a `.cmm` file to the existing variable list. During recording, the TRACE32 row shows connection status with a gray, green, or red indicator.
 
-**OK** creates an additional DBC under `~/.cantrix_data/TRACE32` for the imported symbols and loads it into the current configuration. The DBC defines readable environment variables with the `TRACE32_` prefix. If a DBC name is adjusted, its comment contains the original symbol name. During live recording, successful reads update the environment variables in the Trace Viewer and any panels bound to them. ASC export includes the recorded values.
+**OK** creates an additional DBC in the folder `Database/TRACE32` for the imported symbols and loads it into the current configuration. The file is named after the configuration (`TRACE32-Watch-<name>.dbc`, likewise `Database/VectorIO/Vector-IO-<name>.dbc` for Vector I/O) and is replaced on every change; manual edits are lost then. Saving under another name creates a file of its own. The DBC defines readable environment variables with the `TRACE32_` prefix. If a DBC name is adjusted, its comment contains the original symbol name. During live recording, successful reads update the environment variables in the Trace Viewer and any panels bound to them. ASC export includes the recorded values.
 
 TRACE32 must resolve variable names in the loaded symbol set. The Trace Viewer reads scalar values directly and shows symbols that can only be read as memory as a list of bytes. A C preprocessor macro (`#define`) is readable only if there is a corresponding symbol in target memory.
 

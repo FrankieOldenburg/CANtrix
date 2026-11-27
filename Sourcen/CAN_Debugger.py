@@ -62,14 +62,14 @@ def watch_environment_names(settings):
     return names
 
 
-def create_watch_database(names, directory=None):
-    """Save an environment-only DBC and reuse identical generated files."""
+def create_watch_database(names, directory=None, config_name=''):
+    """Save an environment-only DBC under the name of the configuration."""
     if not names:
         return None
     fields = {name: {'name': name, 'type': 'float', 'minimum': '-1.7976931348623157e308',
                      'maximum': '1.7976931348623157e308', 'access': 'read',
                      'description': 'TRACE32: ' + symbol} for symbol, name in names.items()}
-    return write_generated_dbc(fields, 'TRACE32', 'TRACE32-Watch', directory)
+    return write_generated_dbc(fields, 'TRACE32', directory, config_name)
 
 
 def read_t32_value(debugger, name):
