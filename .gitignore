@@ -176,3 +176,7 @@ Database/BMW/MessageCatalogue_EESystem25_26KW33_CAN_FD_IPB_41_patch_20261002.arx
 Database/BMW/MessageCatalogue_EESystem25_26KW33_CAN_FD_IPB_41_patch_20261002.dbc
 Database/BMW/MessageCatalogue_EESystem25_26KW33_CAN_FD_IPB_41.html
 Plugins/FBD6_RangingStatistic_from_Trace/analyze_box2box.py
+Plugins/FBD6 Device Projection/three/BufferGeometryUtils.js
+Plugins/FBD6 Device Projection/three/GLTFLoader.js
+Plugins/FBD6 Device Projection/three/LICENSE
+Plugins/FBD6 Device Projection/three/three.module.js
