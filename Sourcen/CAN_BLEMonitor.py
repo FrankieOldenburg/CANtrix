@@ -29,6 +29,7 @@ from CAN_Language import load_language, set_text, tr
 MAX_PACKETS = 20000  # older packets are dropped
 MAX_ROWS = 2000  # rows of the packet view
 POLL_MS = 200
+NO_NAME = '-'  # shown for devices without a name; as name filter it selects them
 
 # Common Bluetooth SIG company IDs (excerpt)
 COMPANY_IDS = {
@@ -60,7 +61,10 @@ def signature(packet):
 def matches(packet, name='', address='', uuid='', company=None, min_rssi=None):
     if min_rssi is not None and packet.rssi is not None and packet.rssi < min_rssi:
         return False
-    if name and name.lower() not in packet.name.lower():
+    if name == NO_NAME:  # devices without a name
+        if packet.name and packet.name != NO_NAME:
+            return False
+    elif name and name.lower() not in packet.name.lower():
         return False
     if address and address.lower() not in packet.address.lower():
         return False
@@ -71,6 +75,13 @@ def matches(packet, name='', address='', uuid='', company=None, min_rssi=None):
     if company is not None and company not in [item[0] for item in packet.manufacturer]:
         return False
     return True
+
+
+def name_choices(packets):
+    """Entries of the name filter list: all (empty), devices without a name, the names found."""
+    names = set(packet.name or NO_NAME for packet in packets)
+    unnamed = [NO_NAME] if NO_NAME in names else []
+    return [''] + unnamed + sorted(names - {NO_NAME}, key=str.lower)
 
 
 def company_text(packet):
@@ -187,7 +198,7 @@ def draw_clear_icon(canvas, color):
 DEVICE_COLUMNS = (('time', 'Zeit', 100), ('address', 'Adresse', 280), ('name', 'Name', 160), ('rssi', 'RSSI', 60),
                   ('tx', 'TX-Power', 70), ('count', 'Anzahl', 70), ('company', 'Hersteller', 160),
                   ('data', 'Daten', 380), ('info', 'Erklärung', 520))
-FILTERS = (('name', 'Name:', 14), ('address', 'Adresse:', 14), ('uuid', 'Service-UUID:', 10),
+FILTERS = (('name', 'Name:', 15), ('address', 'Adresse:', 32), ('uuid', 'Service-UUID:', 10),
            ('company', 'Company ID:', 8), ('min_rssi', 'Min. RSSI:', 6))
 NUMERIC = ('time', 'rssi', 'tx', 'count')
 
@@ -253,7 +264,12 @@ if tk is not None:
             options.pack(side=tk.TOP, fill=tk.X)
             for key, label, width in FILTERS:
                 ttk.Label(options, text=tr(label)).pack(side=tk.LEFT)
-                ttk.Entry(options, textvariable=self.filters[key], width=width).pack(side=tk.LEFT, padx=(4, 12))
+                if key == 'name':  # list of the names found, typing a part of a name works too
+                    field = ttk.Combobox(options, textvariable=self.filters[key], width=width)
+                    field.configure(postcommand=lambda box=field: box.configure(values=name_choices(self.packets)))
+                else:
+                    field = ttk.Entry(options, textvariable=self.filters[key], width=width)
+                field.pack(side=tk.LEFT, padx=(4, 12))
             options = ttk.Frame(card, padding=(12, 6, 12, 6))
             options.pack(side=tk.TOP, fill=tk.X)
             ttk.Checkbutton(options, text=tr('Nur Änderungen'), variable=self.changes_only,
@@ -462,10 +478,7 @@ if tk is not None:
                 self.menu.add_command(label=label % value, command=lambda: self.filters[key].set(value))
 
             add('address', tr('Nach Adresse filtern: %s'), packet.address)
-            if packet.name:
-                add('name', tr('Nach Name filtern: %s'), packet.name)
-            else:
-                self.menu.add_command(label=tr('Nach Name filtern'), state=tk.DISABLED)
+            add('name', tr('Nach Name filtern: %s'), packet.name or NO_NAME)
             uuids = sorted(set(packet.uuids) | set(item[0] for item in packet.service_data))
             for uuid in uuids:
                 add('uuid', tr('Nach Service-UUID filtern: %s'), uuid)

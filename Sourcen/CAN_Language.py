@@ -892,7 +892,6 @@ EN = {
     'Zeit': 'Time',
     'Nach Adresse filtern: %s': 'Filter by address: %s',
     'Nach Name filtern: %s': 'Filter by name: %s',
-    'Nach Name filtern': 'Filter by name',
     'Nach Service-UUID filtern: %s': 'Filter by service UUID: %s',
     'Nach Service-UUID filtern': 'Filter by service UUID',
     'Bluetooth-Low-Energy-Advertising': 'Bluetooth Low Energy advertising',
