@@ -18,7 +18,7 @@ try:
 except ImportError:
     tk = None
 
-from CAN_Common import DATABASE_TYPES, C, Theme, apply_appearance, combine_databases
+from CAN_Common import DATABASE_TYPES, C, Theme, apply_appearance, combine_databases, resolve_path
 from CAN_Language import set_text, tr
 from CAN_TraceViewer import de_int, natural_key, read_database
 
@@ -43,11 +43,15 @@ def normalize_databases(entries):
     return result
 
 
-def config_databases(config):
-    """Database list of a configuration: 'databases', or 'database' (one path) of older versions."""
+def config_databases(config, base=None):
+    """Database list of a configuration: 'databases', or 'database' (one path) of older versions. Relative paths count from
+    `base`, the folder of the configuration file."""
     entries = config.get('databases')
     if not isinstance(entries, list):
         entries = [config['database']] if isinstance(config.get('database'), str) else []
+    # Resolve first: normalize_databases makes relative paths absolute against the current folder.
+    entries = [dict(entry, path=resolve_path(entry.get('path'), base)) if isinstance(entry, dict)
+               else resolve_path(entry, base) for entry in entries]
     return normalize_databases(entries)
 
 

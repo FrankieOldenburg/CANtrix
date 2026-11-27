@@ -22,7 +22,7 @@ try:
 except ImportError:
     tk = None
 
-from CAN_Common import C, Theme, apply_appearance
+from CAN_Common import C, Theme, apply_appearance, resolve_path
 from CAN_Databases import file_stamp
 from CAN_Language import set_text, tr
 from CAN_TraceViewer import TRACE_TYPES, Frame, absolute_time_text, de_int, read_trace
@@ -42,11 +42,15 @@ def normalize_traces(entries):
     return result
 
 
-def config_traces(config):
-    """Trace list of a configuration: 'traces', or 'trace' (one path) of older versions."""
+def config_traces(config, base=None):
+    """Trace list of a configuration: 'traces', or 'trace' (one path) of older versions. Relative paths count from
+    `base`, the folder of the configuration file."""
     entries = config.get('traces')
     if not isinstance(entries, list):
         entries = [config['trace']] if isinstance(config.get('trace'), str) else []
+    # Resolve first: normalize_traces makes relative paths absolute against the current folder.
+    entries = [dict(entry, path=resolve_path(entry.get('path'), base)) if isinstance(entry, dict)
+               else resolve_path(entry, base) for entry in entries]
     return normalize_traces(entries)
 
 

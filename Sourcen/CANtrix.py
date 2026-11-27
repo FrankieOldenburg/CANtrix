@@ -2316,8 +2316,8 @@ if tk is not None:
                 return
 
             base = os.path.dirname(os.path.abspath(path))  # relative paths count from the configuration file
-            databases = [dict(entry, path=resolve_path(entry['path'], base)) for entry in config_databases(config)]
-            traces = [dict(entry, path=resolve_path(entry['path'], base)) for entry in config_traces(config)]
+            databases = config_databases(config, base)
+            traces = config_traces(config, base)
             panel_paths = [resolve_path(item, base) for item in config_panels(config)]
             if not self.close_windows():  # a window asks about unsaved changes
                 return
