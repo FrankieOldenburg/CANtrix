@@ -29,8 +29,8 @@ rem In einer virtuellen Umgebung geht --user nicht.
 set "USERFLAG=--user"
 %PYTHON% -c "import sys; sys.exit(0 if sys.prefix != sys.base_prefix else 1)" && set "USERFLAG="
 
-echo PyInstaller, TRACE32-RCL und pyserial werden installiert bzw. aktualisiert ...
-%PYTHON% -m pip install %USERFLAG% --upgrade pyinstaller lauterbach-trace32-rcl pyserial
+echo PyInstaller, TRACE32-RCL, pyserial und bleak werden installiert bzw. aktualisiert ...
+%PYTHON% -m pip install %USERFLAG% --upgrade pyinstaller lauterbach-trace32-rcl pyserial bleak
 if errorlevel 1 (
     echo.
     echo Die Installation der Build-Abhaengigkeiten ist fehlgeschlagen.

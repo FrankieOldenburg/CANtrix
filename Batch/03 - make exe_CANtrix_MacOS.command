@@ -29,8 +29,8 @@ if python3 -c "import sys; sys.exit(0 if sys.prefix != sys.base_prefix else 1)";
     USER_FLAG=""
 fi
 
-echo "PyInstaller, TRACE32-RCL und pyserial werden installiert bzw. aktualisiert ..."
-if ! python3 -m pip install $USER_FLAG --upgrade pyinstaller lauterbach-trace32-rcl pyserial; then
+echo "PyInstaller, TRACE32-RCL, pyserial und bleak werden installiert bzw. aktualisiert ..."
+if ! python3 -m pip install $USER_FLAG --upgrade pyinstaller lauterbach-trace32-rcl pyserial bleak; then
     echo
     echo "Die Installation der Build-Abhängigkeiten ist fehlgeschlagen."
     pause_and_exit 1
