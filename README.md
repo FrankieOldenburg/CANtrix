@@ -262,6 +262,7 @@ Gesendet wird über die Verbindung der Aufzeichnung: Datenquelle "Live" wählen 
 - **Scannen:** das Dreieck startet, das Quadrat beendet den Scan. Mit "Laufzeit (s)" endet er von selbst (leer = bis zum Beenden). "Passiver Scan" gibt es nicht unter macOS und nicht auf jedem System.
 - **Ansicht:** "Geräte" zeigt je Adresse eine Zeile mit dem letzten Paket und der Anzahl, "Pakete" jedes Paket (höchstens 2000 Zeilen). Ein Klick auf eine Zeile zeigt unten alle Daten. Ein Rechtsklick auf eine Zeile übernimmt Adresse, Name oder Service-UUID des Pakets in den Filter.
 - **Filter:** Name, Adresse und Service-UUID als Textteil, Company ID (z. B. `0x004C`) und kleinster RSSI. "Nur Änderungen" zeigt ein Gerät nur neu, wenn sich seine Daten ändern.
+- **Erklärung:** die Spalte neben den Daten und die Anzeige unten beschreiben, was in den Daten steht, soweit das Format bekannt ist: Apple (u. a. Nearby Info, Handoff, Wo ist?, AirPods), iBeacon, Microsoft, Eddystone und bekannte Bluetooth-Dienste. Apple veröffentlicht sein Format nicht; diese Angaben beruhen auf Reverse Engineering und können unvollständig oder falsch sein. Verschlüsselte Inhalte lassen sich nicht lesen, bei unbekannten Daten bleibt die Spalte leer.
 - **Speichern:** schreibt die gefilterten Pakete als CSV (Trennzeichen `;`). Es werden die letzten 20000 Pakete aufbewahrt.
 - **macOS:** Statt der MAC-Adresse erscheint eine Geräte-UUID. Beim ersten Scan muss Bluetooth erlaubt werden (Systemeinstellungen > Datenschutz & Sicherheit > Bluetooth).
 

@@ -260,6 +260,7 @@ Messages are sent over the connection of the recording: choose the data source "
 - **Scanning:** the triangle starts and the square stops the scan. With "Duration (s)" it ends on its own (empty = until stopped). "Passive scan" is not available on macOS and not on every system.
 - **View:** "Devices" shows one row per address with the latest packet and the count, "Packets" every packet (at most 2000 rows). Clicking a row shows all of its data below. A right click on a row takes the packet's address, name or service UUID into the filter.
 - **Filters:** name, address and service UUID as part of the text, company ID (e.g. `0x004C`) and minimum RSSI. "Changes only" shows a device again only when its data changes.
+- **Explanation:** the column next to the data and the area below describe what the data contain, as far as the format is known: Apple (e.g. Nearby Info, Handoff, Find My, AirPods), iBeacon, Microsoft, Eddystone, and well-known Bluetooth services. Apple does not publish its format; these statements are based on reverse engineering and can be incomplete or wrong. Encrypted content cannot be read; for unknown data the column stays empty.
 - **Saving:** writes the filtered packets as CSV (separator `;`). The latest 20000 packets are kept.
 - **macOS:** a device UUID is shown instead of the MAC address. On the first scan Bluetooth has to be allowed (System Settings > Privacy & Security > Bluetooth).
 

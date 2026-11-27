@@ -21,6 +21,7 @@ try:
 except ImportError:
     tk = None
 
+from CAN_BLEDecode import explain, long_lines, short_text
 from CAN_Common import (C, Theme, apply_appearance, draw_save_icon, icon_hue, icon_line, initial_geometry,
                         window_geometry)
 from CAN_Language import load_language, set_text, tr
@@ -82,28 +83,37 @@ def payload_text(packet):
     return ' | '.join(parts)
 
 
+def explanation(packet):
+    return explain(packet.manufacturer, packet.uuids, packet.service_data)
+
+
 def detail_lines(packet):
     lines = ['%s  %s' % (packet.address, packet.name or '-')]
     for cid, data in packet.manufacturer:
         lines.append('Manufacturer 0x%04X (%s): %s' % (cid, COMPANY_IDS.get(cid, '?'), data))
     lines.extend('Service UUID: %s' % uuid for uuid in packet.uuids)
     lines.extend('Service Data %s: %s' % item for item in packet.service_data)
+    meaning = long_lines(explanation(packet))
+    if meaning:
+        lines.append(tr('Erklärung:'))
+        lines.extend('  ' + line for line in meaning)
     return lines
 
 
 def write_csv(path, packets):
-    """Same columns as the command line example."""
+    """Columns of the command line example, followed by the explanation."""
     with open(path, 'w', newline='', encoding='utf-8') as handle:
         writer = csv.writer(handle, delimiter=';')
         writer.writerow(['timestamp', 'address', 'name', 'rssi', 'tx_power', 'manufacturer_data',
-                         'service_uuids', 'service_data'])
+                         'service_uuids', 'service_data', 'explanation'])
         for packet in packets:
             writer.writerow([
                 packet.time.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3], packet.address, packet.name or '-',
                 packet.rssi, packet.tx_power,
                 ' | '.join('0x%04X:%s' % item for item in packet.manufacturer),
                 ' | '.join(packet.uuids),
-                ' | '.join('%s:%s' % item for item in packet.service_data)])
+                ' | '.join('%s:%s' % item for item in packet.service_data),
+                short_text(explanation(packet))])
 
 
 class Scanner(object):
@@ -176,7 +186,7 @@ def draw_clear_icon(canvas, color):
 
 DEVICE_COLUMNS = (('time', 'Zeit', 100), ('address', 'Adresse', 280), ('name', 'Name', 160), ('rssi', 'RSSI', 60),
                   ('tx', 'TX-Power', 70), ('count', 'Anzahl', 70), ('company', 'Hersteller', 160),
-                  ('data', 'Daten', 400))
+                  ('data', 'Daten', 380), ('info', 'Erklärung', 520))
 FILTERS = (('name', 'Name:', 14), ('address', 'Adresse:', 14), ('uuid', 'Service-UUID:', 10),
            ('company', 'Company ID:', 8), ('min_rssi', 'Min. RSSI:', 6))
 NUMERIC = ('time', 'rssi', 'tx', 'count')
@@ -256,7 +266,7 @@ if tk is not None:
             ttk.Label(options, text=tr('Laufzeit (s):')).pack(side=tk.LEFT)
             ttk.Entry(options, textvariable=self.duration, width=7).pack(side=tk.LEFT, padx=(4, 0))
 
-            self.detail = tk.Text(card, height=6, wrap=tk.NONE, relief=tk.FLAT, background=C.SURFACE,
+            self.detail = tk.Text(card, height=9, wrap=tk.WORD, relief=tk.FLAT, background=C.SURFACE,
                                   foreground=C.INK, highlightthickness=1, highlightbackground=C.LINE,
                                   highlightcolor=C.LINE, padx=10, pady=6, font='TkFixedFont',
                                   state=tk.DISABLED)
@@ -268,7 +278,7 @@ if tk is not None:
             for key, title, width in DEVICE_COLUMNS:
                 anchor = tk.E if key in ('rssi', 'tx', 'count') else tk.W
                 tree.heading(key, text=tr(title), anchor=anchor)
-                tree.column(key, width=width, minwidth=50, anchor=anchor, stretch=key == 'data')
+                tree.column(key, width=width, minwidth=50, anchor=anchor, stretch=key == 'info')
             vertical = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=tree.yview)
             horizontal = ttk.Scrollbar(frame, orient=tk.HORIZONTAL, command=tree.xview)
             tree.configure(yscrollcommand=vertical.set, xscrollcommand=horizontal.set)
@@ -388,7 +398,7 @@ if tk is not None:
             values = (packet.time.strftime('%H:%M:%S.%f')[:-3], packet.address, packet.name or '-',
                       '' if packet.rssi is None else packet.rssi,
                       '' if packet.tx_power is None else packet.tx_power, device[0], company_text(packet),
-                      payload_text(packet))
+                      payload_text(packet), short_text(explanation(packet)))
             if grouped and device[1] is not None:
                 row = device[1]
                 self.tree.item(row, values=values)
@@ -509,7 +519,7 @@ if tk is not None:
             pass  # all widgets are recoloured by set_dark_mode
 
         def language_changed(self):
-            self._show_detail()
+            self.rebuild()  # the explanations of the rows are translated
 
         def window_settings(self):
             settings = dict((key, variable.get()) for key, variable in self.filters.items())
