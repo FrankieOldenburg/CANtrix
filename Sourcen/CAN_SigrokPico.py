@@ -36,12 +36,6 @@ MAX_BYTES = 500000000  # in memory: one byte per sample and digital channel, fou
 MAX_RAW_BYTES = 100000000
 
 
-def automatic_rate(bitrate):
-    """Ten samples per bit, raised to the next rate that divides the clock of the Pico evenly or nearly."""
-    target = max(MIN_RATE, 10 * bitrate)
-    return CLOCK // max(1, CLOCK // target)
-
-
 def analog_limit(count):
     """Highest sample rate with this number of analog channels: the ADC converts below 500 kHz in total, and the
     rate should divide its 48 MHz clock and 24 MHz evenly."""

@@ -253,21 +253,22 @@ Gesendet wird über die Verbindung der Aufzeichnung: Datenquelle "Live" wählen 
 
 ### Logic Analyzer
 
-"Ansicht > Logic Analyzer" öffnet ein Fenster, das wie PulseView aufgebaut ist: oben die Zeitachse, darunter je Kanal eine Zeile. Ein digitaler Kanal wird als CAN dekodiert; direkt unter ihm stehen die einzelnen Bits (`CAN: Bits`, Stuff-Bits blau) und die CAN-Felder (`CAN: Fields`: ID, Steuerbits, Datenbytes `DB`, CRC, ACK, EOF; auch CAN FD mit Bitratenumschaltung). Die CRC wird angezeigt, aber nicht geprüft.
+"Ansicht > Logic Analyzer" öffnet ein Fenster, das wie PulseView aufgebaut ist: oben die Zeitachse, darunter je Kanal eine Zeile.
 
 Aufgezeichnet wird wahlweise mit einem USBtingo oder einem sigrok-pico (Auswahlfeld "Gerät"). Die Aufzeichnung wird als Sigrok-Datei (`.sr`) abgelegt.
 
 | Gerät | Kanäle | Benötigt |
 |---|---|---|
-| USBtingo | die CAN-RX-Leitung | `python-can`, `python-can-usbtingo`, unter macOS libusb |
-| sigrok-pico | bis 21 digitale und 3 analoge | `pyserial` (kein sigrok-cli) |
+| USBtingo | die CAN-RX-Leitung, mit CAN-Dekodierung | `python-can`, `python-can-usbtingo`, unter macOS libusb |
+| sigrok-pico | bis 21 digitale und 3 analoge, beliebige Signale | `pyserial` (kein sigrok-cli) |
 
 - **Aufzeichnen:** roter Punkt startet, rotes Quadrat beendet die Aufzeichnung; danach wird sie angezeigt.
 - **USBtingo:** tastet den Pegel der CAN-RX-Leitung ab (wie "USBtingoGUI > Logic"). Läuft schon eine Live-Aufzeichnung mit dem USBtingo, wird deren Verbindung mitbenutzt, sonst öffnet das Fenster den USBtingo selbst.
+- **CAN-Dekodierung (nur USBtingo):** unter dem Pegelverlauf stehen die einzelnen Bits (`CAN: Bits`, Stuff-Bits blau) und die CAN-Felder (`CAN: Fields`: ID, Steuerbits, Datenbytes `DB`, CRC, ACK, EOF; auch CAN FD mit Bitratenumschaltung). Die CRC wird angezeigt, aber nicht geprüft. Bitrate, CAN FD und Datenrate (Vorgabe aus "Einstellungen > CAN Trace Recorder") bestimmen das Dekodieren; eine Änderung dekodiert neu. Nötig sind mindestens 4 Abtastwerte je Bit.
 
 **sigrok-pico**
 
-Ein Raspberry Pi Pico mit der Firmware sigrok-pico (github.com/pico-coder/sigrok-pico), per USB angeschlossen.
+Ein Raspberry Pi Pico mit der Firmware sigrok-pico (github.com/pico-coder/sigrok-pico), per USB angeschlossen. Mit ihm ist das Fenster ein allgemeiner Logic Analyzer für beliebige Signale; eine CAN-Dekodierung gibt es dabei nicht.
 
 **Achtung:** Alle Eingänge des Pico, auch die analogen, vertragen nur 3,3 V. Liefert eine Quelle 5 V (z. B. der RXD-Ausgang vieler CAN-Transceiver), ist ein Pegelwandler oder Spannungsteiler nötig. Die Masse muss verbunden sein.
 
@@ -278,19 +279,18 @@ Ein Raspberry Pi Pico mit der Firmware sigrok-pico (github.com/pico-coder/sigrok
 
 - **Anschluss:** "Auto" sucht den Pico selbst, sonst den seriellen Port wählen oder eintragen.
 - **Kanäle…:** wählt die aufzuzeichnenden Kanäle, je Gruppe auch "Alle" oder "Keine". Voreingestellt ist D2.
-- **CAN-Kanal:** bestimmt, welcher digitale Kanal dekodiert wird. Er lässt sich auch nach der Aufzeichnung ändern.
-- **Analoge Kanäle:** Mit 1, 2 oder 3 analogen Kanälen sind höchstens 400, 240 oder 160 kHz Abtastrate möglich, auch für die digitalen; eine höhere Wahl wird darauf begrenzt. Zum Dekodieren reicht das nur bis 100, 60 bzw. 40 kBit/s. Schnellere CAN-Busse deshalb ohne analoge Kanäle aufzeichnen.
-- **Überlauf:** Der Pico sendet die Daten schon während der Aufzeichnung über USB. Sind es zu viele (hohe Abtastrate, viele wechselnde Kanäle, hohe Buslast), bricht er ab; die Aufzeichnung bis dahin wird mit einem Hinweis angezeigt. Am wenigsten Daten fallen mit D2 bis D5 ohne analoge Kanäle an.
+- **Bezeichnungen:** Das Textfeld neben jedem Kanal (im Fenster "Kanäle…") gibt ihm einen Namen, z. B. "SCL". Er steht links neben der Zeile, lässt sich auch nach der Aufzeichnung ändern und wird mit der Konfiguration gespeichert. In der gespeicherten `.sr`-Datei heißt der Kanal dann z. B. "D2 SCL" (so auch in PulseView).
+- **Analoge Kanäle:** Mit 1, 2 oder 3 analogen Kanälen sind höchstens 400, 240 oder 160 kHz Abtastrate möglich, auch für die digitalen; eine höhere Wahl wird darauf begrenzt.
+- **Überlauf:** Der Pico sendet die Daten schon während der Aufzeichnung über USB. Sind es zu viele (hohe Abtastrate, viele wechselnde Kanäle, häufige Pegelwechsel), bricht er ab; die Aufzeichnung bis dahin wird mit einem Hinweis angezeigt. Am wenigsten Daten fallen mit D2 bis D5 ohne analoge Kanäle an.
 - **Länge:** Sehr lange Aufzeichnungen werden gekürzt (bei 21 Kanälen nach etwa 24 Millionen Abtastwerten). Beim Beenden kann der letzte Sekundenbruchteil fehlen.
 
-**Einstellungen, Bedienung und Dateien**
+**Bedienung und Dateien**
 
-- **Dekodieren:** Bitrate, CAN FD und Datenrate (Vorgabe aus "Einstellungen > CAN Trace Recorder"); eine Änderung dekodiert neu. Nötig sind mindestens 4 Abtastwerte je Bit.
-- **Abtastrate:** gilt für die nächste Aufzeichnung. "Auto" wählt etwa das Zehnfache der Bitrate bzw. Datenrate.
+- **Abtastrate:** gilt für die nächste Aufzeichnung. "Auto" wählt beim USBtingo etwa das Zehnfache der Bitrate bzw. Datenrate, beim sigrok-pico 5 MHz (mit analogen Kanälen die höchste mögliche Rate).
 - **Zoomen und Verschieben:** Mausrad zoomt, Ziehen verschiebt (auch Umschalt+Mausrad und die Bildlaufleiste), Doppelklick auf ein Bit oder Feld zoomt darauf. "Alles anzeigen" zeigt die ganze Aufzeichnung.
 - **Viele Kanäle:** senkrecht rollen mit der rechten Bildlaufleiste oder dem Mausrad über den Kanalnamen.
 - **Werte ablesen:** Fährt man mit der Maus über ein Bit, ein Feld oder einen analogen Kanal, stehen Bedeutung bzw. Spannung und Zeit in der Statusleiste.
-- **Dateien:** Das Öffnen-Symbol lädt eine Sigrok-Datei (`.sr`, auch mit mehreren digitalen und analogen Kanälen; dekodiert wird der "CAN-Kanal", sonst der Kanal `CAN` oder der erste). Das Speichern-Symbol kopiert die Aufzeichnung an einen frei gewählten Ort.
+- **Dateien:** Das Öffnen-Symbol lädt eine Sigrok-Datei (`.sr`, auch mit mehreren digitalen und analogen Kanälen). Dekodiert wird nur bei gewähltem Gerät USBtingo; hat die Datei mehrere digitale Kanäle, bestimmt "CAN-Kanal" den dekodierten. Das Speichern-Symbol kopiert die Aufzeichnung an einen frei gewählten Ort.
 
 ### BLE Monitor
 

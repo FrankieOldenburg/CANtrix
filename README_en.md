@@ -251,21 +251,22 @@ Messages are sent over the connection of the recording: choose the data source "
 
 ### Logic Analyzer
 
-"View > Logic Analyzer" opens a window laid out like PulseView: the time axis on top, below it one row per channel. One digital channel is decoded as CAN; right below it are the individual bits (`CAN: Bits`, stuff bits blue) and the CAN fields (`CAN: Fields`: ID, control bits, data bytes `DB`, CRC, ACK, EOF; also CAN FD with bit rate switching). The CRC is shown but not checked.
+"View > Logic Analyzer" opens a window laid out like PulseView: the time axis on top, below it one row per channel.
 
 Recording uses either a USBtingo or a sigrok-pico (field "Device"). The recording is stored as a Sigrok file (`.sr`).
 
 | Device | Channels | Needs |
 |---|---|---|
-| USBtingo | the CAN RX line | `python-can`, `python-can-usbtingo`, on macOS libusb |
-| sigrok-pico | up to 21 digital and 3 analog | `pyserial` (no sigrok-cli) |
+| USBtingo | the CAN RX line, with CAN decoding | `python-can`, `python-can-usbtingo`, on macOS libusb |
+| sigrok-pico | up to 21 digital and 3 analog, any signals | `pyserial` (no sigrok-cli) |
 
 - **Recording:** the red dot starts and the red square stops the recording; it is then shown.
 - **USBtingo:** samples the level of the CAN RX line (like "USBtingoGUI > Logic"). If a live recording with the USBtingo is already running, its connection is shared, otherwise the window opens the USBtingo itself.
+- **CAN decoding (USBtingo only):** below the level are the individual bits (`CAN: Bits`, stuff bits blue) and the CAN fields (`CAN: Fields`: ID, control bits, data bytes `DB`, CRC, ACK, EOF; also CAN FD with bit rate switching). The CRC is shown but not checked. Bit rate, CAN FD and data rate (default from "Settings > CAN Trace Recorder") control the decoding; a change decodes again. At least 4 samples per bit are needed.
 
 **sigrok-pico**
 
-A Raspberry Pi Pico with the firmware sigrok-pico (github.com/pico-coder/sigrok-pico), connected by USB.
+A Raspberry Pi Pico with the firmware sigrok-pico (github.com/pico-coder/sigrok-pico), connected by USB. With it the window is a general logic analyzer for any signals; there is no CAN decoding.
 
 **Caution:** all inputs of the Pico, the analog ones too, tolerate 3.3 V only. If a source delivers 5 V (e.g. the RXD output of many CAN transceivers), a level shifter or voltage divider is required. Ground must be connected.
 
@@ -276,19 +277,18 @@ A Raspberry Pi Pico with the firmware sigrok-pico (github.com/pico-coder/sigrok-
 
 - **Port:** "Auto" finds the Pico itself, otherwise select or enter the serial port.
 - **Channels…:** selects the channels to record, per group also "All" or "None". D2 is preset.
-- **CAN channel:** sets which digital channel is decoded. It can also be changed after recording.
-- **Analog channels:** with 1, 2 or 3 analog channels the sample rate is at most 400, 240 or 160 kHz, for the digital channels too; a higher choice is limited to this. For decoding that is enough only up to 100, 60 or 40 kbit/s. Therefore record faster CAN buses without analog channels.
-- **Overflow:** the Pico sends the data over USB while it is recording. If there is too much (high sample rate, many changing channels, high bus load) it aborts; the recording up to that point is shown with a note. D2 to D5 without analog channels produce the least data.
+- **Labels:** the text field next to each channel (in the "Channels…" window) gives it a name, e.g. "SCL". It is shown on the left of its row, can also be changed after recording and is saved with the configuration. In the saved `.sr` file the channel is then called e.g. "D2 SCL" (in PulseView too).
+- **Analog channels:** with 1, 2 or 3 analog channels the sample rate is at most 400, 240 or 160 kHz, for the digital channels too; a higher choice is limited to this.
+- **Overflow:** the Pico sends the data over USB while it is recording. If there is too much (high sample rate, many changing channels, frequent level changes) it aborts; the recording up to that point is shown with a note. D2 to D5 without analog channels produce the least data.
 - **Length:** very long recordings are truncated (with 21 channels after about 24 million samples). When stopping, the last fraction of a second may be missing.
 
-**Settings, operation and files**
+**Operation and files**
 
-- **Decoding:** bit rate, CAN FD and data rate (default from "Settings > CAN Trace Recorder"); a change decodes again. At least 4 samples per bit are needed.
-- **Sample rate:** applies to the next recording. "Auto" chooses about ten times the bit rate or data rate.
+- **Sample rate:** applies to the next recording. "Auto" chooses about ten times the bit rate or data rate for the USBtingo, and 5 MHz for the sigrok-pico (with analog channels the highest possible rate).
 - **Zooming and panning:** the mouse wheel zooms, dragging pans (also Shift+wheel and the scroll bar), a double click on a bit or field zooms to it. "Show all" shows the whole recording.
 - **Many channels:** scroll vertically with the scroll bar on the right or the mouse wheel over the channel names.
 - **Reading values:** hovering over a bit, a field or an analog channel shows its meaning or voltage and the time in the status bar.
-- **Files:** the open icon loads a Sigrok file (`.sr`, also with several digital and analog channels; the "CAN channel" is decoded, otherwise the channel `CAN` or the first one). The save icon copies the recording to a place of your choice.
+- **Files:** the open icon loads a Sigrok file (`.sr`, also with several digital and analog channels). Decoding takes place only while the device USBtingo is selected; if the file has several digital channels, "CAN channel" sets the decoded one. The save icon copies the recording to a place of your choice.
 
 ### BLE Monitor
 
