@@ -925,6 +925,7 @@ EN = {
     'Nach Service-UUID filtern: %s': 'Filter by service UUID: %s',
     'Nach Service-UUID filtern': 'Filter by service UUID',
     'Umgebungsvariable %s': 'Environment variable %s',
+    '%s ersetzen?': 'Replace %s?',
     'Alle Umgebungsvariablen des Geräts anlegen': 'Create all environment variables of the device',
     'BLE-Datenbasis konnte nicht erstellt werden: %s': 'The BLE database could not be created: %s',
     'Bluetooth-Low-Energy-Advertising': 'Bluetooth Low Energy advertising',

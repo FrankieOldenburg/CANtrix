@@ -11,6 +11,7 @@ Start: python3 CANtrix.py [KONFIGURATION] [-d DATENBASIS] [-t TRACE] [-p PANEL]
 Kompatibel mit Python 3.6. Der Trace Recorder benötigt zusätzlich python-can.
 """
 import argparse
+import collections
 import copy
 import json
 import os
@@ -27,7 +28,7 @@ try:
 except ImportError:
     tk = None
 
-from CAN_Common import (attach_dialog, C, FloatingPane, MessageIndex, Theme, apply_appearance, draw_new_icon, draw_open_icon, draw_save_icon,
+from CAN_Common import (ask_save_path, attach_dialog, C, FloatingPane, MessageIndex, Theme, apply_appearance, draw_new_icon, draw_open_icon, draw_save_icon,
                         icon_hue, icon_line, icon_page, initial_geometry, is_dark_mode, load_settings, parse_dbc_environment, program_dir, relative_path, resolve_path, resource_dir, save_settings, set_dark_mode, window_geometry)
 from CAN_Generator import normalize_entries
 from CAN_Info import (VERSION, AboutWindow, InfoWindow, can_self_update, check_update, download_source,
@@ -253,6 +254,7 @@ if tk is not None:
             self.vector_io = None
             self.ble_variables = []  # environment variables of the BLE Monitor
             self.ble_values = {}  # their latest values, by name
+            self.ble_pending = collections.deque(maxlen=10000)  # values while no Trace Viewer is open
             self.database = None
             self._database_cache = {}  # path -> ((mtime, size), database): unchanged files are not read again
             self.database_config = None  # open DatabaseConfigWindow
@@ -1280,6 +1282,7 @@ if tk is not None:
                     app.variables = lambda: list(self.ble_variables)
                     app.on_variables = self.set_ble_variables
                     app.on_values = self._ble_samples
+                    app.on_scan_started = self._ble_scan_started
                 elif key in VIEWER_KEYS:
                     from CAN_TraceViewer import TraceViewerApp
                     section = 'trace' if key == 'trace_viewer' else 'graph'
@@ -1326,6 +1329,8 @@ if tk is not None:
                 self.attach_menu(window)
             self.windows[key] = (window, app)
             if key in VIEWER_KEYS and new_engine:
+                app.engine.add_environment_samples(self.ble_pending)  # scanned before the window was opened
+                self.ble_pending.clear()
                 app.engine.set_source(self.source.get())
             if is_panel_key(key):
                 app.set_source(self.source.get())
@@ -1838,6 +1843,12 @@ if tk is not None:
             self.ble_values = dict((name, text) for name, text in self.ble_values.items() if name in names)
             self._generated_database_changed(old_path, path)
 
+        def _ble_scan_started(self):
+            """BLE Monitor: a scan starts. The data source goes to Live (online), so its values are shown."""
+            if self.source.get() != 'live':
+                self.source.set('live')
+                self.change_source()
+
         def _ble_samples(self, samples):
             """BLE Monitor: values of its environment variables for the Panel Viewers and the live recording."""
             latest = dict((name, text) for _, name, text in samples)
@@ -1846,6 +1857,8 @@ if tk is not None:
             viewer = self._viewer()
             if viewer is not None:
                 viewer.add_environment_samples(samples)
+            else:
+                self.ble_pending.extend(samples)
 
         def configure_debugger(self):
             """Menu 'Einstellungen > TRACE32': variables, interval, host and port (kept in the view of the Trace Viewer)."""
@@ -2065,7 +2078,7 @@ if tk is not None:
                 self.save_config_as()
 
         def save_config_as(self):
-            path = filedialog.asksaveasfilename(
+            path = ask_save_path(
                 parent=self.root, title=tr('Konfiguration speichern'), defaultextension='.canconfig',
                 initialdir=self._initial_dir(self.config_path or self.settings.get('last_config')),
                 initialfile=os.path.basename(self.config_path or 'CANtrix.canconfig'),
@@ -2150,6 +2163,7 @@ if tk is not None:
             self.vector_io = None
             self.ble_variables = []
             self.ble_values = {}
+            self.ble_pending.clear()
             self.trace_entries = []
             if self._database_window() is not None:
                 self._database_window().reload([])
@@ -2253,7 +2267,7 @@ if tk is not None:
 
         def download_update(self, tag):
             """Lädt die Quellen der neuen Version als ZIP (Ziel per Dialog) im Hintergrund; ersetzt nichts im Programm."""
-            path = filedialog.asksaveasfilename(parent=self.root, title=tr('Quellen speichern unter…'),
+            path = ask_save_path(parent=self.root, title=tr('Quellen speichern unter…'),
                                                 initialfile='CANtrix-%s.zip' % tag, defaultextension='.zip',
                                                 filetypes=[('ZIP', '*.zip')])
             if not path:
@@ -2448,6 +2462,7 @@ if tk is not None:
                 return
             self.vector_io, databases = self._restore_vector_io(config.get('vector_io'), base, databases, config_name(path))
             self.ble_values = {}
+            self.ble_pending.clear()
             self.ble_variables, databases = self._restore_ble_variables(config.get('ble_variables'), databases,
                                                                         config_name(path))
             missing = [entry['path'] for entry in databases + traces if not existing_file(entry['path'])]

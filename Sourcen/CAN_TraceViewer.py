@@ -31,7 +31,7 @@ try:
 except ImportError:
     tk = None
 
-from CAN_Common import (C, MessageIndex, Theme, apply_appearance, database_id, decode_text, initial_geometry, is_big_endian,
+from CAN_Common import (ask_save_path, C, MessageIndex, Theme, apply_appearance, database_id, decode_text, initial_geometry, is_big_endian,
                         js_number, js_str, normalize_id, parse_database, parse_dbc_environment, read_database_bytes,
                         signal_bit_numbers, window_geometry)
 from CAN_Debugger import (DebuggerDialog, T32Poller, create_watch_database, normalize_settings,
@@ -498,6 +498,9 @@ if tk is not None:
             channel: CAN channel to show (e.g. '1'), None for all channels (see set_channel)."""
             self.hosts = {}  # section ('trace', 'graph') -> its window
             self._last_root = root
+            # Timers belong to the Tk root: Tk drops the callbacks of a window with the window, so a timer started
+            # on the trace window would stop for good when it is closed while the graph window stays.
+            self.timer = root._root()
             self.settings = dict(settings or {})
             self.results = queue.Queue()
             self.busy = False
@@ -640,7 +643,7 @@ if tk is not None:
 
             self.trace_filter.trace_add('write', lambda *args: self.on_trace_filter())
             self.signal_filter.trace_add('write', lambda *args: self.render_signal_options())
-            self._poll_job = root.after(60, self.poll_results)
+            self._poll_job = self.timer.after(60, self.poll_results)
 
             if sources:
                 self.set_sources(sources, view)
@@ -800,7 +803,7 @@ if tk is not None:
                                                                     'Installation: pip3 install --user python-can')
                                              % error, parent=self.root)
                         return
-                    recorder = self.recorder = Recorder(self.root, self.footer, self._live_data)
+                    recorder = self.recorder = Recorder(self.timer, self.footer, self._live_data)
                     recorder.on_live = self._live_messages
                     recorder.on_running = self._live_running
                     recorder.on_status = self._connection_status
@@ -810,12 +813,12 @@ if tk is not None:
                 self._live_last_page = 0
                 self._live_range = None
                 if self._live_job is None:
-                    self._live_job = self.root.after(LIVE_REFRESH_MS, self._live_tick)
+                    self._live_job = self.timer.after(LIVE_REFRESH_MS, self._live_tick)
             else:
                 if self.recorder is not None:
                     self.recorder.stop()
                 if self._live_job is not None:
-                    self.root.after_cancel(self._live_job)
+                    self.timer.after_cancel(self._live_job)
                     self._live_job = None
                 self._set_trace(self._loaded_trace)
             self._reset_graphs()
@@ -996,16 +999,15 @@ if tk is not None:
                 self._live_dirty = True
 
         def add_environment_samples(self, samples):
-            """Values [(clock time, name, text)] from outside the CAN recording (BLE Monitor): taken over in the
-            state Live while recording, or as long as no CAN frames were recorded; a stopped recording stays."""
-            running = self.recorder is not None and self.recorder.running()
-            if not self.live() or (not running and self._live_trace['frames']):
-                return
+            """Values [(clock time, name, text)] from outside the CAN recording (BLE Monitor): always taken over
+            into the recording, also without Start and while the loaded trace is shown (Start clears them)."""
             environment = self._live_trace['environment']
             for wall, name, text in samples:
                 if self._debug_wall0 is None:  # never started: the first value is at 0 s
                     self._debug_wall0 = wall
-                    self._live_trace['start'] = self.trace_start = datetime.datetime.fromtimestamp(wall)
+                    self._live_trace['start'] = datetime.datetime.fromtimestamp(wall)
+                    if self.live():
+                        self.trace_start = self._live_trace['start']
                 values = environment.setdefault(name, [])
                 if not values or values[-1][1] != text:  # changes only
                     values.append((max(0.0, self._debug_time(wall)), text))
@@ -1047,7 +1049,7 @@ if tk is not None:
             self._drain_debugger()
             if self._live_dirty:
                 self._live_refresh()
-            self._live_job = self.root.after(LIVE_REFRESH_MS, self._live_tick)
+            self._live_job = self.timer.after(LIVE_REFRESH_MS, self._live_tick)
 
         def _live_refresh(self):
             """Show the newly recorded frames: tables and graph, following the end while the user has not
@@ -1267,7 +1269,7 @@ if tk is not None:
             folder = os.path.dirname(self.trace_path) if self.trace_path else os.getcwd()
             stem = datetime.datetime.now().strftime('CAN Trace - %d-%m-%Y - %H_%M_%S')
             file_type = tk.StringVar(master=self.root)
-            path = filedialog.asksaveasfilename(
+            path = ask_save_path(
                 parent=self.root, title=tr('Trace speichern unter'), initialdir=folder, initialfile=stem + '.asc',
                 filetypes=[('%s (*%s)' % (text, extension), '*' + extension)
                            for key, text, extension in WRITE_FORMATS], typevariable=file_type)
@@ -1354,7 +1356,7 @@ if tk is not None:
                         self.report_error(value, failure)
             except queue.Empty:
                 pass
-            self._poll_job = self.root.after(60, self.poll_results)
+            self._poll_job = self.timer.after(60, self.poll_results)
 
         def report_error(self, error, failure='Laden fehlgeschlagen: %s'):
             text = str(error) or error.__class__.__name__
@@ -1621,11 +1623,11 @@ if tk is not None:
             if self.recorder is not None:
                 self.recorder.close()
             if self._live_job is not None:
-                self.root.after_cancel(self._live_job)
+                self.timer.after_cancel(self._live_job)
             for job in (self._poll_job, self._plot_job, self._filter_job, self._position_job):
                 if job is not None:
                     try:
-                        self.root.after_cancel(job)
+                        self.timer.after_cancel(job)
                     except tk.TclError:
                         pass
             self._live_job = self._poll_job = self._plot_job = self._filter_job = self._position_job = None
@@ -1704,7 +1706,10 @@ if tk is not None:
                     title = '%s (%s)' % (message['name'], '0x%X' % normalize_id(frame.id))
                     self.signal_groups.append(('msg:' + message['name'], title, members))
             env_groups = {'io': [], 'env': []}
-            for name in sorted(self.environment, key=natural_key):
+            names = set(self.environment)
+            if self.live():  # selectable before the first value arrives
+                names.update(self.db_environment)
+            for name in sorted(names, key=natural_key):
                 unit = (self.db_environment.get(name) or {}).get('unit') or ''
                 self.trace_signals.append((env_key(name), unit))
                 env_groups['io' if is_io_variable(name) else 'env'].append((env_key(name), name, unit))
@@ -1716,7 +1721,7 @@ if tk is not None:
             self.decoders = {}
             self.filter_cache = None
 
-            signature = (frozenset(last), frozenset(self.environment))
+            signature = (frozenset(last), frozenset(self.environment), frozenset(names))
             unchanged = live and signature == self._live_signature
             self._live_signature = signature
             self.render_trace()
@@ -1884,7 +1889,7 @@ if tk is not None:
                 return
             self.position, self.position_clips = position, clip
             if self._position_job is None:
-                self._position_job = self.root.after(100, self._apply_position)
+                self._position_job = self.timer.after(100, self._apply_position)
 
         def _apply_position(self):
             self._position_job = None
@@ -2100,13 +2105,13 @@ if tk is not None:
 
         def on_trace_filter(self):
             if self._filter_job is not None:
-                self.root.after_cancel(self._filter_job)
+                self.timer.after_cancel(self._filter_job)
 
             def apply():
                 self._filter_job = None
                 self.trace_page = 0
                 self.render_trace()
-            self._filter_job = self.root.after(250, apply)
+            self._filter_job = self.timer.after(250, apply)
 
         def _apply_time_columns(self):
             """Absolute time on: it takes the tree column (leftmost), the relative time moves to 'reltime'.
@@ -2499,7 +2504,7 @@ if tk is not None:
 
         def schedule_plot(self):
             if self._plot_job is None and self.plot is not None:
-                self._plot_job = self.root.after_idle(self.render_plot)
+                self._plot_job = self.timer.after_idle(self.render_plot)
 
         @staticmethod
         def fit_text(font, text, width):

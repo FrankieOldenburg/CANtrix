@@ -23,7 +23,7 @@ except ImportError:
     tk = None
 
 from CAN_BLEDecode import explain, long_lines, short_text
-from CAN_Common import (C, Theme, apply_appearance, draw_save_icon, icon_hue, icon_line, initial_geometry,
+from CAN_Common import (ask_save_path, C, Theme, apply_appearance, draw_save_icon, icon_hue, icon_line, initial_geometry,
                         window_geometry)
 from CAN_DbcEditor import write_generated_dbc
 from CAN_Language import load_language, set_text, tr
@@ -290,6 +290,7 @@ if tk is not None:
             self.variables = lambda: []  # environment variables of the configuration (set by CANtrix)
             self.on_variables = None  # takes over a changed list of them; None: no variables (standalone)
             self.on_values = None  # gets the values of the variables while scanning (see variable_samples)
+            self.on_scan_started = None  # callback(): a scan starts (CANtrix switches to Live)
             self.received = collections.Counter()  # address -> packets since the list was cleared
             self.queue = queue.Queue()
             self.scanner = None
@@ -412,6 +413,8 @@ if tk is not None:
                 messagebox.showerror('BLE Monitor', tr('Die Laufzeit muss eine positive Zahl sein.'),
                                      parent=self.root)
                 return
+            if self.on_scan_started is not None:
+                self.on_scan_started()
             self.queue = queue.Queue()  # nothing of an earlier scan
             self.scanner = Scanner(self.queue, passive=self.passive.get(), duration=duration)
             self.error = None
@@ -635,7 +638,7 @@ if tk is not None:
             """Write the packets that pass the filters."""
             filters, signatures = self._filter_values(), {}
             packets = [packet for packet in self.packets if self._passes(packet, filters, signatures)]
-            path = filedialog.asksaveasfilename(
+            path = ask_save_path(
                 parent=self.root, title=tr('Als CSV speichern…'), defaultextension='.csv',
                 initialfile=datetime.now().strftime('BLE - %d-%m-%Y - %H_%M_%S.csv'),
                 filetypes=[('CSV', '*.csv'), (tr('Alle Dateien'), '*')])

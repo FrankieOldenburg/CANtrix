@@ -30,6 +30,53 @@ MAX_FILE_SIZE = 100 * 1024 * 1024
 DATABASE_TYPES = ('.dbc', '.arxml', '.html', '.htm')
 
 
+# ---------------------------------------------------------------- save dialog
+
+def _without_extensions(name, endings):
+    """name without all of the known endings at its end ('a.dbc.dbc' -> 'a')."""
+    while True:
+        for ending in endings:
+            if len(name) > len(ending) and name.lower().endswith(ending.lower()):
+                name = name[:-len(ending)]
+                break
+        else:
+            return name
+
+
+def single_extension(path, endings):
+    """path with a doubled known ending reduced to one ('a.dbc.dbc' -> 'a.dbc')."""
+    for ending in endings:
+        while path.lower().endswith(ending.lower() * 2):
+            path = path[:-len(ending)]
+    return path
+
+
+def ask_save_path(**options):
+    """filedialog.asksaveasfilename without doubled extensions: Tk on macOS appends the extension of the file
+    type even when the suggested name has it already. So the name is suggested without it, and a doubled one
+    in the result is reduced. Returns '' when cancelled."""
+    from tkinter import filedialog, messagebox
+    from CAN_Language import tr
+    endings = [options.get('defaultextension')]
+    for _, patterns in options.get('filetypes') or ():
+        for pattern in (patterns.split() if isinstance(patterns, str) else patterns):
+            if pattern.startswith('*.') and pattern != '*.*':
+                endings.append(pattern[1:])
+    endings = [ending for ending in endings if ending]
+    if options.get('initialfile'):
+        options['initialfile'] = _without_extensions(options['initialfile'], endings)
+    path = filedialog.asksaveasfilename(**options)
+    if not path:
+        return ''
+    single = single_extension(path, endings)
+    # The dialog asked about replacing only for the name it returned.
+    if single != path and os.path.exists(single) and not messagebox.askyesno(
+            options.get('title') or 'CANtrix', tr('%s ersetzen?') % os.path.basename(single),
+            parent=options.get('parent')):
+        return ''
+    return single
+
+
 # ---------------------------------------------------------------- settings and window
 
 def is_frozen():

@@ -27,7 +27,7 @@ try:
 except ImportError:  # pragma: no cover
     tk = None
 
-from CAN_Common import C, Theme, apply_appearance, attach_dialog, draw_open_icon, draw_save_icon, icon_hue, \
+from CAN_Common import ask_save_path, C, Theme, apply_appearance, attach_dialog, draw_open_icon, draw_save_icon, icon_hue, \
     icon_line, initial_geometry, window_geometry
 from CAN_Language import language, set_text, tr
 from CAN_SigrokPico import ANALOG, DIGITAL, PicoRecording, analog_limit, list_ports, write_sigrok
@@ -829,7 +829,7 @@ if tk is not None:
             if self.capture is None:
                 return
             name = os.path.basename(self.capture['path'])
-            path = filedialog.asksaveasfilename(parent=self.root, title=tr('Aufzeichnung speichern unter…'),
+            path = ask_save_path(parent=self.root, title=tr('Aufzeichnung speichern unter…'),
                                                 initialfile=name, defaultextension='.sr',
                                                 filetypes=[(tr('Sigrok-Aufzeichnung'), '*.sr')])
             if not path:

@@ -20,7 +20,7 @@ try:
 except ImportError:
     tk = None
 
-from CAN_Common import (C, Theme, apply_appearance, as_whole, combine_databases, decode_text, display, draw_new_icon,
+from CAN_Common import (ask_save_path, C, Theme, apply_appearance, as_whole, combine_databases, decode_text, display, draw_new_icon,
                         draw_open_icon, draw_save_icon, ecu_names, icon_hue, icon_line, initial_geometry, is_big_endian, js_str, normalize_id, ordered_unique, parse_database,
                         parse_dbc_environment, read_database_bytes, rounded_rect, signal_bit_numbers,
                         window_geometry)
@@ -1521,7 +1521,7 @@ if tk is not None:
             """Create an empty DBC file (asks for its name) and show it."""
             if not self.confirm_close():
                 return
-            path = filedialog.asksaveasfilename(
+            path = ask_save_path(
                 parent=self.root, title=etr('New DBC file'), defaultextension='.dbc',
                 initialdir=os.path.dirname(self.parts[0]['path']) if self.parts and self.parts[0]['path'] else None,
                 filetypes=[('Vector DBC', '*.dbc'), (etr('All files'), '*.*')])
@@ -1562,7 +1562,7 @@ if tk is not None:
                 index = 0
             part = self.parts[index]
             file_type = tk.StringVar(master=self.root)
-            path = filedialog.asksaveasfilename(
+            path = ask_save_path(
                 parent=self.root, title=etr('Save as…'), defaultextension='.dbc',
                 initialdir=os.path.dirname(part['path']) if part['path'] else None,
                 initialfile=os.path.splitext(part['name'])[0] + '.dbc',
