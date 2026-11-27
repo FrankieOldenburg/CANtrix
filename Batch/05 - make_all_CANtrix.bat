@@ -63,6 +63,13 @@ if errorlevel 1 (
     echo python-can ist installiert und wird mit eingebunden.
     set "EXTRA=--collect-all can"
 )
+rem bleak (fuer den BLE Monitor) ebenfalls nur, wenn es installiert ist.
+%PYTHON% -c "import bleak" >nul 2>nul
+if errorlevel 1 (
+    echo bleak ist nicht installiert: Der BLE Monitor funktioniert in der exe nicht.
+) else (
+    call set "EXTRA=%%EXTRA%% --collect-all bleak --collect-all winrt"
+)
 echo.
 
 rem Eigener Arbeitsordner fuer PyInstaller und die Zip-Dateilisten.

@@ -34,7 +34,7 @@ brew install libusb   # macOS only
 
 If `brew` is not in the PATH (Apple Silicon), `/opt/homebrew/bin/brew install libusb` works. Without libusb, "Test connection" reports "cannot find a suitable libusb-1.0".
 
-The setup scripts install `python-can` and the optional packages `python-can-usbtingo`, `pyserial`, and `lauterbach-trace32-rcl`.
+The setup scripts install `python-can` and the optional packages `python-can-usbtingo`, `pyserial`, `lauterbach-trace32-rcl`, and `bleak` (BLE Monitor).
 
 Alternatively by double-click:
 
@@ -69,7 +69,7 @@ The icons below "CANtrix" in the header:
 
 - The first three create a new configuration, load a configuration and save it (without a loaded configuration you are asked for a file name).
 - The next three open the windows "Databases" and "CAN traces" and a panel.
-- The icons to their right open Database Editor, Trace Viewer (table), Graph Viewer (graph), Panel Viewer, Generator, and Logic Analyzer.
+- The icons to their right open Database Editor, Trace Viewer (table), Graph Viewer (graph), Panel Viewer, Generator, Logic Analyzer, and BLE Monitor.
 - Next comes the Start/Stop toggle (at rest the triangle to start; while recording or playing the highlighted square to stop) and the data source toggle: it shows the active source, Trace (page) or Live (radio waves, highlighted); next to it "Offline" (Trace) or "Online" (Live) is shown; a click switches to the other one. An icon that cannot be used stays grey.
 - On the right are the time slider, time, speed and the checkbox "Follow the Trace Viewer cursor".
 
@@ -252,6 +252,16 @@ Messages are sent over the connection of the recording: choose the data source "
 - **Operation:** the mouse wheel zooms, dragging pans (also Shift+wheel and the scroll bar), a double click on a bit or field zooms to it. Hovering over a bit or field shows its meaning and time in the status bar. "Show all" shows the whole recording.
 - **Files:** the open icon loads a Sigrok file (`.sr`, one channel or the channel `CAN`), the save icon copies the recording to a place of your choice.
 - The CRC is shown but not checked.
+
+### BLE Monitor
+
+"View > BLE Monitor" shows the received Bluetooth Low Energy advertising packets: time, address, name, RSSI, TX power, manufacturer (company ID) and data. This needs `bleak` (`pip3 install --user bleak`); no CAN interface is required.
+
+- **Scanning:** the triangle starts and the square stops the scan. With "Duration (s)" it ends on its own (empty = until stopped). "Passive scan" is not available on macOS and not on every system.
+- **View:** "Devices" shows one row per address with the latest packet and the count, "Packets" every packet (at most 2000 rows). Clicking a row shows all of its data below. A right click on a row takes the packet's address, name or service UUID into the filter.
+- **Filters:** name, address and service UUID as part of the text, company ID (e.g. `0x004C`) and minimum RSSI. "Changes only" shows a device again only when its data changes.
+- **Saving:** writes the filtered packets as CSV (separator `;`). The latest 20000 packets are kept.
+- **macOS:** a device UUID is shown instead of the MAC address. On the first scan Bluetooth has to be allowed (System Settings > Privacy & Security > Bluetooth).
 
 ### Appearance and language
 

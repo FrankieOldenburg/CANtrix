@@ -55,6 +55,13 @@ if errorlevel 1 (
 )
 echo.
 
+echo bleak wird installiert ...
+%PYTHON% -m pip install --user --upgrade bleak
+if errorlevel 1 (
+    echo Hinweis: bleak konnte nicht installiert werden. Nur fuer den BLE Monitor noetig.
+)
+echo.
+
 echo Pruefung:
 %PYTHON% -c "import can; print('python-can', can.__version__, 'ist installiert.')"
 echo.

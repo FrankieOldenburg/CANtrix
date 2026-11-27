@@ -34,7 +34,7 @@ brew install libusb   # nur macOS
 
 Ist `brew` nicht im PATH (Apple Silicon), funktioniert `/opt/homebrew/bin/brew install libusb`. Ohne libusb meldet "Verbindung testen" "cannot find a suitable libusb-1.0".
 
-Die Installationsskripte installieren `python-can` sowie die optionalen Pakete `python-can-usbtingo`, `pyserial` und `lauterbach-trace32-rcl`.
+Die Installationsskripte installieren `python-can` sowie die optionalen Pakete `python-can-usbtingo`, `pyserial`, `lauterbach-trace32-rcl` und `bleak` (BLE Monitor).
 
 Alternativ per Doppelklick:
 
@@ -69,7 +69,7 @@ Die Symbole unter "CANtrix" in der Kopfleiste:
 
 - Die ersten drei erstellen eine neue Konfiguration, laden eine Konfiguration und speichern sie (ohne geladene Konfiguration wird nach dem Dateinamen gefragt).
 - Die nächsten drei öffnen die Fenster "Datenbasen" und "CAN-Traces" und ein Panel.
-- Die Symbole rechts davon öffnen Database Editor, Trace Viewer (Tabelle), Graph Viewer (Grafik), Panel Viewer, Generator und Logic Analyzer.
+- Die Symbole rechts davon öffnen Database Editor, Trace Viewer (Tabelle), Graph Viewer (Grafik), Panel Viewer, Generator, Logic Analyzer und BLE Monitor.
 - Danach folgt der Umschalter Start/Stop (im Ruhezustand das Dreieck zum Starten, während der Aufzeichnung bzw. des Abspielens hervorgehoben das Quadrat zum Beenden) sowie der Umschalter für die Datenquelle: er zeigt die aktive Quelle, Trace (Seite) oder Live (Funkwellen, hervorgehoben), daneben steht "Offline" (Trace) bzw. "Online" (Live); ein Klick wechselt zur anderen. Ein nicht bedienbares Symbol bleibt grau.
 - Rechts stehen Zeitschieber, Zeit, Tempo und der Haken "Cursor des Trace Viewers folgen".
 
@@ -254,6 +254,16 @@ Gesendet wird über die Verbindung der Aufzeichnung: Datenquelle "Live" wählen 
 - **Bedienung:** Mausrad zoomt, Ziehen verschiebt (auch Umschalt+Mausrad und die Bildlaufleiste), Doppelklick auf ein Bit oder Feld zoomt darauf. Fährt man mit der Maus über ein Bit oder Feld, steht in der Statusleiste die Bedeutung und die Zeit. "Alles anzeigen" zeigt die ganze Aufzeichnung.
 - **Dateien:** Das Öffnen-Symbol lädt eine Sigrok-Datei (`.sr`, ein Kanal oder der Kanal `CAN`), das Speichern-Symbol kopiert die Aufzeichnung an einen frei gewählten Ort.
 - Die CRC wird angezeigt, aber nicht geprüft.
+
+### BLE Monitor
+
+"Ansicht > BLE Monitor" zeigt die empfangenen Bluetooth-Low-Energy-Advertising-Pakete: Zeit, Adresse, Name, RSSI, TX-Power, Hersteller (Company ID) und Daten. Dazu muss `bleak` installiert sein (Kapitel „Installation“); eine CAN-Schnittstelle ist nicht nötig.
+
+- **Scannen:** das Dreieck startet, das Quadrat beendet den Scan. Mit "Laufzeit (s)" endet er von selbst (leer = bis zum Beenden). "Passiver Scan" gibt es nicht unter macOS und nicht auf jedem System.
+- **Ansicht:** "Geräte" zeigt je Adresse eine Zeile mit dem letzten Paket und der Anzahl, "Pakete" jedes Paket (höchstens 2000 Zeilen). Ein Klick auf eine Zeile zeigt unten alle Daten. Ein Rechtsklick auf eine Zeile übernimmt Adresse, Name oder Service-UUID des Pakets in den Filter.
+- **Filter:** Name, Adresse und Service-UUID als Textteil, Company ID (z. B. `0x004C`) und kleinster RSSI. "Nur Änderungen" zeigt ein Gerät nur neu, wenn sich seine Daten ändern.
+- **Speichern:** schreibt die gefilterten Pakete als CSV (Trennzeichen `;`). Es werden die letzten 20000 Pakete aufbewahrt.
+- **macOS:** Statt der MAC-Adresse erscheint eine Geräte-UUID. Beim ersten Scan muss Bluetooth erlaubt werden (Systemeinstellungen > Datenschutz & Sicherheit > Bluetooth).
 
 ### Darstellung und Sprache
 

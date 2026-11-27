@@ -44,6 +44,12 @@ if ! python3 -m pip install --user --upgrade pyserial; then
 fi
 echo
 
+echo "bleak wird installiert ..."
+if ! python3 -m pip install --user --upgrade bleak; then
+    echo "Hinweis: bleak konnte nicht installiert werden. Nur für den BLE Monitor nötig."
+fi
+echo
+
 echo "libusb (für den USBtingo) wird geprüft ..."
 BREW=""
 if command -v brew >/dev/null 2>&1; then

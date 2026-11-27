@@ -59,6 +59,12 @@ else
     echo "python-can ist nicht installiert: Der Trace Recorder funktioniert in der App nicht"
     echo "(Installation: 01 - install_python-can_MacOS.command, danach dieses Skript erneut starten)."
 fi
+# bleak (für den BLE Monitor) ebenfalls nur, wenn es installiert ist.
+if python3 -c "import bleak" >/dev/null 2>&1; then
+    EXTRA+=(--collect-all bleak)
+else
+    echo "bleak ist nicht installiert: Der BLE Monitor funktioniert in der App nicht."
+fi
 echo
 
 # Ein eigener Arbeitsordner für PyInstaller, den Download und die Zip-Dateilisten.
@@ -88,6 +94,13 @@ if ! python3 -m PyInstaller --noconfirm --clean --windowed \
     "$PROJECT/Sourcen/CANtrix.py"; then
     echo
     echo "Das Erstellen der App ist fehlgeschlagen."
+    pause_and_exit 1
+fi
+
+# Ohne diese Beschreibung beendet macOS die App beim ersten BLE-Scan. Danach muss neu signiert werden.
+if ! /usr/libexec/PlistBuddy -c "Add :NSBluetoothAlwaysUsageDescription string 'CANtrix empfängt Bluetooth-LE-Advertising-Pakete im BLE Monitor.'" \
+    "$TMP/dist/CANtrix.app/Contents/Info.plist" || ! codesign --force --deep --sign - "$TMP/dist/CANtrix.app"; then
+    echo "Die Bluetooth-Berechtigung konnte nicht in die App eingetragen werden."
     pause_and_exit 1
 fi
 

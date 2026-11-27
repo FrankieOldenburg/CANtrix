@@ -62,7 +62,7 @@ FILE_KINDS = ('database', 'trace', 'panel')  # files of a configuration
 SOURCES = (('trace', 'Trace'), ('live', 'Live'))  # Datenquelle der Viewer
 WINDOW_TITLES = {'database_viewer': 'Database Editor', 'trace_viewer': 'Trace Viewer',
                  'graph_viewer': 'Graph Viewer', 'panel_viewer': 'Panel Viewer', 'generator': 'Generator',
-                 'logic': 'Logic Analyzer (USBtingo)'}  # Fenster, die gedockt werden können (Tab-Text)
+                 'logic': 'Logic Analyzer (USBtingo)', 'ble': 'BLE Monitor'}  # Fenster, die gedockt werden können (Tab-Text)
 
 # Unterfenster: Schlüssel in der Konfiguration, Menütext
 WINDOWS = (
@@ -72,6 +72,7 @@ WINDOWS = (
     ('panel_viewer', 'Panel Viewer'),
     ('generator', 'Generator'),
     ('logic', 'Logic Analyzer (USBtingo)'),
+    ('ble', 'BLE Monitor'),
 )
 VIEWER_KEYS = ('trace_viewer', 'graph_viewer')  # the two windows of the shared trace viewer engine
 
@@ -212,6 +213,11 @@ def draw_logic_icon(canvas, color):
     """Square wave: Logic Analyzer (USBtingo)."""
     canvas.create_line(7, 20, 7, 11, 12, 11, 12, 20, 17, 20, 17, 11, 23, 11, **icon_line(icon_hue(5), 2))
     canvas.create_line(7, 24, 23, 24, **icon_line(C.MUTED))
+
+
+def draw_ble_icon(canvas, color):
+    """Bluetooth rune: BLE Monitor."""
+    canvas.create_line(10, 11, 20, 19.5, 15, 23.5, 15, 6.5, 20, 10.5, 10, 19, **icon_line(icon_hue(5), 1.5))
 
 
 def draw_graph_icon(canvas, color):
@@ -719,7 +725,7 @@ if tk is not None:
             save_tip = lambda: (tr('Konfiguration speichern (%s+S)') % label if self.config_path
                                 else tr('Konfiguration speichern unter…'))
             icons = {'database_viewer': draw_database_icon, 'trace_viewer': draw_trace_icon, 'graph_viewer': draw_graph_icon,
-                     'generator': draw_generator_icon, 'logic': draw_logic_icon,
+                     'generator': draw_generator_icon, 'logic': draw_logic_icon, 'ble': draw_ble_icon,
                      'panel_viewer': draw_panel_icon}
             groups = (
                 ((draw_new_icon, self.new_config, lambda: tr('Neue Konfiguration (%s+N)') % label),
@@ -1259,6 +1265,9 @@ if tk is not None:
                     from CAN_LogicAnalyzer import LogicApp
                     app = LogicApp(window, settings=settings, connection=self.recorder_connection())
                     app.get_bus = self._usbtingo_bus
+                elif key == 'ble':
+                    from CAN_BLEMonitor import BLEMonitorApp
+                    app = BLEMonitorApp(window, settings=settings)
                 elif key in VIEWER_KEYS:
                     from CAN_TraceViewer import TraceViewerApp
                     section = 'trace' if key == 'trace_viewer' else 'graph'
