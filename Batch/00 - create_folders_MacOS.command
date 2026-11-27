@@ -9,6 +9,7 @@ for folder in \
     "Database/Demo" \
     "Database/TRACE32" \
     "Database/VectorIO" \
+    "Database/BLE" \
     "Nodes/Demo" \
     "Panel/Demo" \
     "Plugins" \

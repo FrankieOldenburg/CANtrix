@@ -995,6 +995,22 @@ if tk is not None:
             if changed:
                 self._live_dirty = True
 
+        def add_environment_samples(self, samples):
+            """Values [(clock time, name, text)] from outside the CAN recording (BLE Monitor): taken over in the
+            state Live while recording, or as long as no CAN frames were recorded; a stopped recording stays."""
+            running = self.recorder is not None and self.recorder.running()
+            if not self.live() or (not running and self._live_trace['frames']):
+                return
+            environment = self._live_trace['environment']
+            for wall, name, text in samples:
+                if self._debug_wall0 is None:  # never started: the first value is at 0 s
+                    self._debug_wall0 = wall
+                    self._live_trace['start'] = self.trace_start = datetime.datetime.fromtimestamp(wall)
+                values = environment.setdefault(name, [])
+                if not values or values[-1][1] != text:  # changes only
+                    values.append((max(0.0, self._debug_time(wall)), text))
+                    self._live_dirty = True
+
         def configure_debugger(self):
             dialog = DebuggerDialog(self.root, self.debugger_settings)
             if dialog.result is None:

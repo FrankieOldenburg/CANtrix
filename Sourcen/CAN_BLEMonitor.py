@@ -11,6 +11,7 @@ import asyncio
 import collections
 import csv
 import queue
+import re
 import sys
 import threading
 from datetime import datetime
@@ -24,6 +25,7 @@ except ImportError:
 from CAN_BLEDecode import explain, long_lines, short_text
 from CAN_Common import (C, Theme, apply_appearance, draw_save_icon, icon_hue, icon_line, initial_geometry,
                         window_geometry)
+from CAN_DbcEditor import write_generated_dbc
 from CAN_Language import load_language, set_text, tr
 
 MAX_PACKETS = 20000  # older packets are dropped
@@ -38,6 +40,82 @@ COMPANY_IDS = {
 }
 
 Packet = collections.namedtuple('Packet', 'time address name rssi tx_power manufacturer uuids service_data')
+
+
+# Environment variables of a device: field -> (end of the name, minimum, maximum, unit, text of the description)
+VARIABLE_FIELDS = collections.OrderedDict((
+    ('rssi', ('RSSI', '-128', '127', 'dBm', 'RSSI')),
+    ('name', ('Name', '0', '0', '', 'Name')),
+    ('tx_power', ('TX_Power', '-128', '127', 'dBm', 'TX-Power')),
+    ('count', ('Anzahl', '0', '2147483647', '', 'Anzahl')),
+))
+
+
+ADDRESS_LENGTH = 10  # characters of the address in a variable name
+
+
+def variable_key(entry):
+    return entry['address'], entry['field']
+
+
+def assign_names(variables):
+    """Entries {'address', 'field', 'name'}. The name is '<first 10 characters of the address>_RSSI' as a DBC
+    identifier (at most 32 characters). Devices whose addresses start alike get '_2', '_3', … behind the address
+    part; a name once given is kept."""
+    prefixes = {}  # address -> address part of its names
+    for entry in variables:
+        end = '_' + VARIABLE_FIELDS[entry['field']][0]
+        name = entry.get('name')
+        if isinstance(name, str) and len(name) <= 32 and name.endswith(end) \
+                and re.match(r'[A-Za-z_][A-Za-z0-9_]*\Z', name):
+            prefixes.setdefault(entry['address'], name[:-len(end)])
+    result = []
+    for entry in variables:
+        address = entry['address']
+        if address not in prefixes:
+            base = re.sub(r'[^A-Za-z0-9_]', '_', address[:ADDRESS_LENGTH])
+            base = '_' + base if base[0].isdigit() else base
+            prefix, number = base, 2
+            while prefix in prefixes.values():
+                prefix, number = '%s_%d' % (base, number), number + 1
+            prefixes[address] = prefix
+        result.append({'address': address, 'field': entry['field'],
+                       'name': '%s_%s' % (prefixes[address], VARIABLE_FIELDS[entry['field']][0])})
+    return result
+
+
+def normalize_ble_variables(value):
+    """Valid entries of a saved configuration, without duplicates."""
+    result, keys = [], set()
+    for item in value if isinstance(value, list) else []:
+        if isinstance(item, dict) and isinstance(item.get('address'), str) and item['address'] \
+                and item.get('field') in VARIABLE_FIELDS and variable_key(item) not in keys:
+            keys.add(variable_key(item))
+            result.append(item)
+    return assign_names(result)
+
+
+def create_ble_database(variables, directory=None, config_name=''):
+    """Environment-only DBC for the variables (Database/BLE); None without variables."""
+    if not variables:
+        return None
+    fields = collections.OrderedDict()
+    for entry in assign_names(variables):
+        name = entry['name']
+        _, minimum, maximum, unit, label = VARIABLE_FIELDS[entry['field']]
+        fields[name] = {'name': name, 'type': 'integer', 'minimum': minimum, 'maximum': maximum, 'unit': unit,
+                        'access': 'read, string' if entry['field'] == 'name' else 'read',
+                        'description': 'BLE %s: %s' % (entry['address'], label)}
+    return write_generated_dbc(fields, 'BLE', directory, config_name)
+
+
+def variable_samples(variables, packet, count):
+    """[(clock time, variable name, value text)] of a packet; values the packet does not carry are left out."""
+    values = {'rssi': packet.rssi, 'name': ' '.join(packet.name.splitlines()) or None,
+              'tx_power': packet.tx_power, 'count': count}
+    moment = packet.time.timestamp()
+    return [(moment, entry['name'], str(values[entry['field']])) for entry in variables
+            if entry['address'] == packet.address and values[entry['field']] is not None]
 
 
 def hex_text(data):
@@ -209,6 +287,10 @@ if tk is not None:
             """root: Tk, Toplevel or DockFrame. settings: window settings."""
             self.root = root
             self.settings = dict(settings or {})
+            self.variables = lambda: []  # environment variables of the configuration (set by CANtrix)
+            self.on_variables = None  # takes over a changed list of them; None: no variables (standalone)
+            self.on_values = None  # gets the values of the variables while scanning (see variable_samples)
+            self.received = collections.Counter()  # address -> packets since the list was cleared
             self.queue = queue.Queue()
             self.scanner = None
             self.packets = collections.deque(maxlen=MAX_PACKETS)
@@ -356,6 +438,7 @@ if tk is not None:
             if new:
                 follow = self.tree.yview()[1] >= 0.999
                 self.packets.extend(new)
+                self._send_values(new)
                 last = None
                 for packet in new:
                     last = self._add_row(packet) or last
@@ -376,6 +459,16 @@ if tk is not None:
             self.poll_job = self.root.after(POLL_MS, self._poll)
             if error is not None:
                 messagebox.showerror('BLE Monitor', error, parent=self.root)
+
+        def _send_values(self, packets):
+            """The packets as values of the environment variables (independent of the filters)."""
+            variables = self.variables()
+            samples = []
+            for packet in packets:
+                self.received[packet.address] += 1
+                samples.extend(variable_samples(variables, packet, self.received[packet.address]))
+            if samples and self.on_values is not None:
+                self.on_values(samples)
 
         # ------------------------------------------------------------ table
 
@@ -484,6 +577,34 @@ if tk is not None:
                 add('uuid', tr('Nach Service-UUID filtern: %s'), uuid)
             if not uuids:
                 self.menu.add_command(label=tr('Nach Service-UUID filtern'), state=tk.DISABLED)
+            if self.on_variables is not None:
+                self._add_variable_entries(packet.address)
+
+        def _add_variable_entries(self, address):
+            """One check entry per environment variable of the device (checked = it exists)."""
+            existing = self.variables()
+            keys = set(variable_key(entry) for entry in existing)
+            missing = [{'address': address, 'field': field} for field in VARIABLE_FIELDS
+                       if (address, field) not in keys]
+            named = assign_names(existing + missing)
+            self.menu.add_separator()
+            self._menu_checks = []  # Tk needs the variables while the menu is open
+            for field in VARIABLE_FIELDS:
+                name = next(entry['name'] for entry in named if variable_key(entry) == (address, field))
+                checked = tk.BooleanVar(value=(address, field) in keys)
+                self._menu_checks.append(checked)
+                self.menu.add_checkbutton(label=tr('Umgebungsvariable %s') % name, variable=checked,
+                                          command=lambda field=field: self._toggle_variable(address, field))
+            self.menu.add_command(label=tr('Alle Umgebungsvariablen des Geräts anlegen'),
+                                  state=tk.NORMAL if missing else tk.DISABLED,
+                                  command=lambda: self.on_variables(existing + missing))
+
+        def _toggle_variable(self, address, field):
+            existing = self.variables()
+            rest = [entry for entry in existing if variable_key(entry) != (address, field)]
+            if len(rest) == len(existing):
+                rest.append({'address': address, 'field': field})
+            self.on_variables(rest)
 
         def _selected_address(self):
             selection = self.tree.selection()
@@ -506,6 +627,7 @@ if tk is not None:
 
         def clear(self):
             self.packets.clear()
+            self.received.clear()
             self.rebuild()
             self._update_buttons()
 

@@ -28,7 +28,7 @@ except ImportError:
     tk = None
 
 from CAN_Common import (attach_dialog, C, FloatingPane, MessageIndex, Theme, apply_appearance, draw_new_icon, draw_open_icon, draw_save_icon,
-                        icon_hue, icon_line, icon_page, initial_geometry, is_dark_mode, load_settings, program_dir, relative_path, resolve_path, resource_dir, save_settings, set_dark_mode, window_geometry)
+                        icon_hue, icon_line, icon_page, initial_geometry, is_dark_mode, load_settings, parse_dbc_environment, program_dir, relative_path, resolve_path, resource_dir, save_settings, set_dark_mode, window_geometry)
 from CAN_Generator import normalize_entries
 from CAN_Info import (VERSION, AboutWindow, InfoWindow, can_self_update, check_update, download_source,
                       install_update, open_file, remove_old_updates, restart_program)
@@ -42,6 +42,7 @@ from CAN_RecorderSettings import (BITRATES as RECORDER_BITRATES, DATA_BITRATES a
 from CAN_TraceViewer import DASH, SectionWindow, absolute_time_text, de_int, natural_key, trace_channels
 from CAN_Traces import TraceConfigWindow, config_traces, load_traces, normalize_traces, trace_summary
 from CAN_VectorIO import VectorIODialog, create_vector_io_database, normalize_vector_io
+from CAN_BLEMonitor import assign_names, create_ble_database, normalize_ble_variables
 from CAN_DbcEditor import copy_generated_dbc, generated_category
 from CAN_TraceWriters import write_trace
 from CAN_Databases import (DatabaseConfigWindow, config_databases, database_summary, load_databases,
@@ -250,6 +251,8 @@ if tk is not None:
             # them combined ({'name', 'path', 'messages', 'environment', 'databases'}), None without one.
             self.database_entries = []
             self.vector_io = None
+            self.ble_variables = []  # environment variables of the BLE Monitor
+            self.ble_values = {}  # their latest values, by name
             self.database = None
             self._database_cache = {}  # path -> ((mtime, size), database): unchanged files are not read again
             self.database_config = None  # open DatabaseConfigWindow
@@ -1211,7 +1214,7 @@ if tk is not None:
                 if is_panel_key(key):
                     app.channel = self.channel  # set_sources rebuilds
                     app.set_sources(fresh)
-                elif 'database' in fresh:
+                elif 'database' in fresh and hasattr(app, 'set_database'):  # not Logic Analyzer and BLE Monitor
                     app.set_database(self.database)
             if 'trace' in fresh and not self._panel_apps():
                 self._local_moment = self._local_range()[0]
@@ -1274,6 +1277,9 @@ if tk is not None:
                 elif key == 'ble':
                     from CAN_BLEMonitor import BLEMonitorApp
                     app = BLEMonitorApp(window, settings=settings)
+                    app.variables = lambda: list(self.ble_variables)
+                    app.on_variables = self.set_ble_variables
+                    app.on_values = self._ble_samples
                 elif key in VIEWER_KEYS:
                     from CAN_TraceViewer import TraceViewerApp
                     section = 'trace' if key == 'trace_viewer' else 'graph'
@@ -1326,6 +1332,7 @@ if tk is not None:
                 viewer = self._viewer()
                 if viewer is not None:
                     app.live_environment(viewer.live_environment_values())
+                app.live_environment(self.ble_values)
                 self._assign_master()
                 self._local_stop()
                 self._master().show_time()
@@ -1815,6 +1822,31 @@ if tk is not None:
             self.vector_io = config
             self._generated_database_changed(old_path, path)
 
+        def set_ble_variables(self, variables):
+            """BLE Monitor: write the database of its environment variables and add it to the databases."""
+            variables = assign_names(variables)
+            try:
+                path = create_ble_database(variables, config_name=config_name(self.config_path))
+            except (OSError, ValueError) as error:
+                messagebox.showerror('BLE Monitor', tr('BLE-Datenbasis konnte nicht erstellt werden: %s') % error,
+                                     parent=self.root)
+                return
+            old_path = next((entry['path'] for entry in self.database_entries
+                             if generated_category(entry['path']) == 'BLE'), None)
+            self.ble_variables = variables
+            names = set(entry['name'] for entry in variables)
+            self.ble_values = dict((name, text) for name, text in self.ble_values.items() if name in names)
+            self._generated_database_changed(old_path, path)
+
+        def _ble_samples(self, samples):
+            """BLE Monitor: values of its environment variables for the Panel Viewers and the live recording."""
+            latest = dict((name, text) for _, name, text in samples)
+            self.ble_values.update(latest)
+            self._live_environment(latest)
+            viewer = self._viewer()
+            if viewer is not None:
+                viewer.add_environment_samples(samples)
+
         def configure_debugger(self):
             """Menu 'Einstellungen > TRACE32': variables, interval, host and port (kept in the view of the Trace Viewer)."""
             viewer = self._viewer()
@@ -2017,7 +2049,8 @@ if tk is not None:
             if vector_io and vector_io.get('database'):
                 vector_io['database'] = rel(vector_io['database'])
             # 'database' (first path) keeps the configuration readable for older versions.
-            return {'vector_io': vector_io, 'format': CONFIG_FORMAT, 'version': 1,
+            return {'vector_io': vector_io, 'ble_variables': self.ble_variables,
+                    'format': CONFIG_FORMAT, 'version': 1,
                     'docked': self.docked.get() or self._tray_docked,
                     'speed': self.speed_var.get(), 'follow_cursor': self.follow_var.get(), 'databases': rel_entries(self.database_entries),
                     'database': rel(self.database_entries[0]['path']) if self.database_entries else None,
@@ -2115,6 +2148,8 @@ if tk is not None:
             self.generator_entries = []
             self.database_entries = []
             self.vector_io = None
+            self.ble_variables = []
+            self.ble_values = {}
             self.trace_entries = []
             if self._database_window() is not None:
                 self._database_window().reload([])
@@ -2373,6 +2408,28 @@ if tk is not None:
                 databases.append({'path': path, 'channel': None})
             return config, databases
 
+        def _restore_ble_variables(self, saved, databases, name=''):
+            """Variables of a configuration; their database is created again if it is missing or does not
+            contain them under their names."""
+            variables = normalize_ble_variables(saved)
+            generated = [entry for entry in databases if generated_category(entry['path']) == 'BLE']
+            names = set(entry['name'] for entry in variables)
+            found = set()
+            for entry in generated:
+                if existing_file(entry['path']):
+                    with open(entry['path'], encoding='latin-1') as handle:
+                        found.update(parse_dbc_environment(handle.read()))
+            if variables and not names <= found:
+                try:
+                    path = create_ble_database(variables, config_name=name)
+                except (OSError, ValueError) as error:
+                    messagebox.showerror('BLE Monitor', tr('BLE-Datenbasis konnte nicht erstellt werden: %s') % error,
+                                         parent=self.root)
+                    return variables, databases
+                databases = [entry for entry in databases if entry not in generated]
+                databases.append({'path': path, 'channel': None})
+            return variables, databases
+
         def load_config(self, path):
             try:
                 with open(path, encoding='utf-8') as handle:
@@ -2390,6 +2447,9 @@ if tk is not None:
             if not self.close_windows():  # a window asks about unsaved changes
                 return
             self.vector_io, databases = self._restore_vector_io(config.get('vector_io'), base, databases, config_name(path))
+            self.ble_values = {}
+            self.ble_variables, databases = self._restore_ble_variables(config.get('ble_variables'), databases,
+                                                                        config_name(path))
             missing = [entry['path'] for entry in databases + traces if not existing_file(entry['path'])]
             missing.extend(path for path in panel_paths if not existing_file(path))
             self.database = self.trace = None

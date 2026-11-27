@@ -168,9 +168,10 @@ Traces/BMW/TestTrace2_localization.html
 Traces/BMW/TestTrace2_analysis.html
 Traces/BMW/TestTrace2_box2box.html
 
-# Von CANtrix erzeugte Datenbasen (TRACE32-Watch, Vector I/O)
+# Von CANtrix erzeugte Datenbasen (TRACE32-Watch, Vector I/O, BLE Monitor)
 Database/TRACE32/
 Database/VectorIO/
+Database/BLE/
 CLAUDE.md
 Database/BMW/MessageCatalogue_EESystem25_26KW33_CAN_FD_IPB_41_patch_20261002.arxml.arxml
 Database/BMW/MessageCatalogue_EESystem25_26KW33_CAN_FD_IPB_41_patch_20261002.dbc
