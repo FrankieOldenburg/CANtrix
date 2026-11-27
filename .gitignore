@@ -165,3 +165,5 @@ Plugins/FBD6 Device Projection/Karmann Ghia/Karmann.bin
 Plugins/FBD6 Device Projection/Karmann Ghia/Karmann.gltf
 Traces/BMW/live_localization.html
 Traces/BMW/TestTrace2_localization.html
+Traces/BMW/TestTrace2_analysis.html
+Traces/BMW/TestTrace2_box2box.html
