@@ -31,6 +31,7 @@ try:
 except ImportError:
     tk = None
 
+import CAN_Clipboard
 from CAN_Common import (ask_save_path, C, MessageIndex, Theme, apply_appearance, database_id, decode_text, initial_geometry, is_big_endian,
                         js_number, js_str, normalize_id, parse_database, parse_dbc_environment, read_database_bytes,
                         signal_bit_numbers, window_geometry)
@@ -497,6 +498,8 @@ if tk is not None:
             CANtrix.py); database_path/trace_path are only for the stand-alone start.
             channel: CAN channel to show (e.g. '1'), None for all channels (see set_channel)."""
             self.hosts = {}  # section ('trace', 'graph') -> its window
+            self._plot_fit = False  # True while the graph is copied to the clipboard
+            self.plot_menu = None  # menu of the graph (right click)
             self._last_root = root
             # Timers belong to the Tk root: Tk drops the callbacks of a window with the window, so a timer started
             # on the trace window would stop for good when it is closed while the graph window stays.
@@ -1180,7 +1183,7 @@ if tk is not None:
                                 style='Toolbutton').pack(side=tk.LEFT, padx=(16 if value == 'x' else 0, 0))
             ttk.Checkbutton(toolbar, text=tr('2. Cursor'), variable=self.second_cursor, style='Toolbutton',
                             command=self.on_second_cursor).pack(side=tk.LEFT, padx=(16, 0))
-            self._hint(area, tr('Klick: Cursor (mit 2. Cursor: der nähere) · Rechtsklick: 2. Cursor · Mausrad und '
+            self._hint(area, tr('Klick: Cursor (mit 2. Cursor: der nähere) · Rechtsklick: Menü (Kopieren, 2. Cursor) · Mausrad und '
                                 'Ziehen: Zoom in der gewählten Achse · Shift+Mausrad: andere Achse'), (8, 0, 8, 6))
             self.cursor_info_label = ttk.Label(area, textvariable=self.cursor_info, padding=(12, 4, 12, 8))
             canvas_frame = ttk.Frame(area)
@@ -1195,7 +1198,7 @@ if tk is not None:
             plot.bind('<ButtonPress-1>', self.on_plot_press)
             plot.bind('<B1-Motion>', self.on_plot_drag)
             plot.bind('<ButtonRelease-1>', self.on_plot_release)
-            # Right click sets the 2nd cursor (macOS: Button-2 or Control+click, others: Button-3).
+            # Right click opens the menu of the graph (macOS: Button-2 or Control+click, others: Button-3).
             right_buttons = ('<Button-2>', '<Button-3>', '<Control-Button-1>') \
                 if plot.tk.call('tk', 'windowingsystem') == 'aqua' else ('<Button-3>',)
             for sequence in right_buttons:
@@ -2533,7 +2536,8 @@ if tk is not None:
             if width < 50 or view_height < 20:
                 return
             series_list = self.visible_series()
-            height = max(120, view_height, len(series_list) * 100)
+            # for a copy all lanes have to fit into the visible area
+            height = max(120, view_height, 0 if self._plot_fit else len(series_list) * 100)
             canvas.configure(scrollregion=(0, 0, width, height))
             if not series_list:
                 canvas.create_text(width / 2, max(view_height / 2, 60), fill=C.MUTED, font=self.font_empty,
@@ -2788,17 +2792,53 @@ if tk is not None:
             self.schedule_plot()
 
         def on_plot_right_click(self, event):
-            """Right click (macOS also Control+click): set the 2nd cursor there and switch it on."""
+            """Right click (macOS also Control+click): menu to copy the graph or to set the 2nd cursor there."""
+            time = None
             bounds = self.plot_bounds
-            if not bounds:
-                return 'break'
-            x = self.plot.canvasx(event.x)
-            if not bounds['left'] <= x <= bounds['left'] + bounds['plot_width']:
-                return 'break'
-            x0, x1 = bounds['x']
-            self.second_cursor.set(True)
-            self.set_cursor2(x0 + (x - bounds['left']) / bounds['plot_width'] * (x1 - x0))
+            if bounds:
+                x = self.plot.canvasx(event.x)
+                if bounds['left'] <= x <= bounds['left'] + bounds['plot_width']:
+                    x0, x1 = bounds['x']
+                    time = x0 + (x - bounds['left']) / bounds['plot_width'] * (x1 - x0)
+            if self.plot_menu is not None:
+                self.plot_menu.destroy()
+            menu = self.plot_menu = tk.Menu(self.plot, tearoff=False)
+            menu.add_command(label=tr('Grafik in die Zwischenablage kopieren'),
+                             state=tk.NORMAL if CAN_Clipboard.AVAILABLE and bounds else tk.DISABLED,
+                             # the menu has to be gone before the picture is taken
+                             command=lambda: self.timer.after(150, self.copy_graph))
+            menu.add_command(label=tr('2. Cursor hier setzen'), state=tk.DISABLED if time is None else tk.NORMAL,
+                             command=lambda: self.place_cursor2(time))
+            try:
+                menu.tk_popup(event.x_root, event.y_root)
+            finally:
+                menu.grab_release()
             return 'break'
+
+        def place_cursor2(self, time):
+            """Set the 2nd cursor and switch it on."""
+            self.second_cursor.set(True)
+            self.set_cursor2(time)
+
+        def copy_graph(self):
+            """The graph as an image on the clipboard; all signals, also those scrolled out of sight."""
+            plot = self.plot
+            if plot is None:
+                return
+            position = plot.yview()[0]
+            self._plot_fit = True
+            try:
+                self.render_plot()
+                plot.yview_moveto(0)
+                CAN_Clipboard.copy_widget(plot)
+            except (OSError, tk.TclError) as error:
+                self.set_footer('Kopieren fehlgeschlagen: %s', str(error))
+            else:
+                self.set_footer('Grafik in die Zwischenablage kopiert')
+            finally:
+                self._plot_fit = False
+                self.render_plot()
+                plot.yview_moveto(position)
 
         def set_cursor2(self, time):
             self.cursor2_time = time

@@ -692,9 +692,9 @@ EN = {
     'Signale': 'Signals',
     '%s von %s Signalen in der Grafik': '%s of %s signals in the graph',
     'Fenster': 'Window',
-    'Klick: Cursor (mit 2. Cursor: der nähere) · Rechtsklick: 2. Cursor · Mausrad und Ziehen: Zoom in der '
+    'Klick: Cursor (mit 2. Cursor: der nähere) · Rechtsklick: Menü (Kopieren, 2. Cursor) · Mausrad und Ziehen: Zoom in der '
     'gewählten Achse · Shift+Mausrad: andere Achse':
-        'Click: cursor (with 2nd cursor: the nearer one) · Right click: 2nd cursor · Mouse wheel and drag: zoom '
+        'Click: cursor (with 2nd cursor: the nearer one) · Right click: menu (copy, 2nd cursor) · Mouse wheel and drag: zoom '
         'the selected axis · Shift+mouse wheel: other axis',
     '2. Cursor': '2nd cursor',
     'Bitte warten, es wird noch geladen…': 'Please wait, still loading…',
@@ -926,6 +926,9 @@ EN = {
     'Nach Service-UUID filtern': 'Filter by service UUID',
     'Umgebungsvariable %s': 'Environment variable %s',
     '%s ersetzen?': 'Replace %s?',
+    'Grafik in die Zwischenablage kopieren': 'Copy graph to clipboard',
+    '2. Cursor hier setzen': 'Set 2nd cursor here',
+    'Grafik in die Zwischenablage kopiert': 'Graph copied to the clipboard',
     'Alle Umgebungsvariablen des Geräts anlegen': 'Create all environment variables of the device',
     'BLE-Datenbasis konnte nicht erstellt werden: %s': 'The BLE database could not be created: %s',
     'Bluetooth-Low-Energy-Advertising': 'Bluetooth Low Energy advertising',
