@@ -41,6 +41,11 @@ Alternatively by double-click:
 - Windows: Batch/01 - install_python-can_Windows.bat
 - macOS: Batch/01 - install_python-can_MacOS.command (on the first start, right-click > Open if macOS blocks the file)
 
+A script creates the folder structure for your own files (`Database`, `Nodes`, `Panel`, `Plugins`, `Traces`); existing folders are left unchanged:
+
+- Windows: Batch/00 - create_folders_Windows.bat
+- macOS: Batch/00 - create_folders_MacOS.command
+
 ## Start
 
 ```bash
