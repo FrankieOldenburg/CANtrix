@@ -374,7 +374,8 @@ Use **right-click → Copy to clipboard** to copy the same export as Vector ASC 
 
 - Export includes all CAN channels regardless of the table filter. With multiple traces, it exports the combined trace. If a time range is selected, the exported range starts at 0 s.
 - ASC keeps environment variables and CAN errors. A trace with environment variables and no CAN frames can be saved as ASC.
-- Extended IDs are detected by their size (above 0x7FF), CAN FD by the data length (above 8 bytes).
+- Extended IDs are detected by their size (above 0x7FF).
+- CAN FD is kept, also for messages with up to 8 bytes. Messages with more than 8 bytes always count as CAN FD. BUSMASTER, SavvyCAN CSV and python-can SQLite do not mark CAN FD: short CAN FD messages from these sources or saved as BUSMASTER count as classic CAN. CSV stores the mark in the column `fd`.
 - Not every format can hold everything: SLCAN knows only one channel; candump, SLCAN and PCAP store no direction (Rx/Tx); BUSMASTER stores times to 0.1 ms, SLCAN to 1 ms.
 - Formats with a clock time (e.g. ASC, BLF, candump, PCAP) get the start of measurement of the loaded trace, without one the time of saving.
 

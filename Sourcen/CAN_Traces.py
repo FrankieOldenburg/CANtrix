@@ -76,7 +76,7 @@ def combine_traces(traces):
             offset = previous_end  # no start time: directly after the previous trace
         for frame in trace['frames']:
             frames.append(Frame(frame.time + offset, frame.channel, frame.direction, frame.id, frame.trace_name,
-                                frame.data, 0))
+                                frame.data, 0, frame.fd))
         for name, values in (trace.get('environment') or {}).items():
             environment.setdefault(name, []).extend((time + offset, value) for time, value in values)
         errors.extend((time + offset, channel, text) for time, channel, text in trace.get('errors') or ())

@@ -33,7 +33,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from CAN_Common import C, Theme, apply_appearance, is_frozen, program_dir
 from CAN_Language import set_text, tr
-from CAN_TraceWriters import asc_line, is_fd
+from CAN_TraceWriters import asc_line
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = program_dir()  # Projektordner (die Skripte liegen in Sourcen/), in der exe der Ordner daneben
@@ -136,7 +136,7 @@ def live_lines(frames):
     lines = []
     for frame in frames:
         number = int(frame.channel) if str(frame.channel).isdigit() else 1
-        lines.append(asc_line(frame, number, frame.fd or is_fd(frame)))
+        lines.append(asc_line(frame, number))
     return ''.join(lines).encode('utf-8')
 
 

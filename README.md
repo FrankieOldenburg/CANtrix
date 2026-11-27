@@ -376,7 +376,8 @@ Mit **Rechtsklick → In Zwischenablage kopieren** kopierst du denselben Export 
 
 - Der Export umfasst alle CAN-Kanäle unabhängig vom Tabellenfilter. Bei mehreren Traces exportiert er den zusammengeführten Trace. Ist ein Zeitbereich ausgewählt, beginnt dieser im Export bei 0 s.
 - ASC übernimmt Umgebungsvariablen und CAN-Fehler. Ein Trace mit Umgebungsvariablen ohne CAN-Frames lässt sich als ASC speichern.
-- Extended-IDs werden an der Größe erkannt (über 0x7FF), CAN FD an der Datenlänge (über 8 Byte).
+- Extended-IDs werden an der Größe erkannt (über 0x7FF).
+- CAN FD bleibt erhalten, auch bei Botschaften mit höchstens 8 Byte. Botschaften mit mehr als 8 Byte gelten immer als CAN FD. BUSMASTER, SavvyCAN-CSV und python-can SQLite kennzeichnen CAN FD nicht: Kurze CAN-FD-Botschaften aus diesen Quellen oder in BUSMASTER gespeichert gelten als klassisches CAN. CSV speichert das Kennzeichen in der Spalte `fd`.
 - Nicht jedes Format kann alles aufnehmen: SLCAN kennt nur einen Kanal; candump, SLCAN und PCAP speichern keine Richtung (Rx/Tx); BUSMASTER speichert Zeiten auf 0,1 ms, SLCAN auf 1 ms genau.
 - Formate mit Uhrzeit (z. B. ASC, BLF, candump, PCAP) bekommen den Messbeginn des geladenen Traces, ohne ihn den Zeitpunkt des Speicherns.
 

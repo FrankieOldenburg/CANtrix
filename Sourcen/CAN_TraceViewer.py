@@ -151,7 +151,7 @@ class Frame(object):
                  'message', 'name', 'count', '_int', 'fd')
 
     def __init__(self, time, channel, direction, identifier, trace_name, data, line, fd=False):
-        self.fd = fd  # CAN FD frame; only known for recorded frames
+        self.fd = fd  # CAN FD frame (also with up to 8 bytes), as far as the source says so
         self.time = time
         self.channel = channel
         self.direction = direction
@@ -261,6 +261,7 @@ ASC_CLASSIC_RE = re.compile(
 ASC_COMPACT_RE = re.compile(r'^\s*(-?\d+(?:\.\d+)?)\s+(?:CANFD|CAN)\s+(\d+)\s+(Rx|Tx)\s+([0-9a-f]+)x?\s+(.+)$', re.I)
 COMPACT_DATA_RE = re.compile(r'(?:^|\s)(?:d|f)\s+(\d+)\s+((?:[0-9a-f]{2}\s*)+)', re.I)
 # CAN error frame of a Vector ASC trace, e.g. "2.153270 1  ErrorFrame ECC: 10100010"
+ASC_FD_LINE_RE = re.compile(r'^\s*\S+\s+CANFD\s', re.I)  # a frame on a CANFD line is a CAN FD frame
 ASC_ERROR_RE = re.compile(r'^\s*(-?\d+(?:\.\d+)?)\s+(?:CANFD\s+|CAN\s+)?(\d+)\s+(?:(?:Rx|Tx)\s+)?'
                           r'Error\s?Frame\b\s*(.*?)\s*$', re.I)
 STATUS_RE = re.compile(r'\b(?:error|warning|status:|overload|bus\s+off)\b', re.I)
@@ -280,10 +281,10 @@ def hex_bytes(text, count):
 
 
 def frames_from_rows(rows):
-    """Frames from the rows (time, channel, direction, id, data, line) of CAN_TraceFormats; the result
+    """Frames from the rows (time, channel, direction, id, data, line, fd) of CAN_TraceFormats; the result
     keeps the start of measurement (start)."""
-    frames = Rows(Frame(time, channel, direction, identifier, '', data, line)
-                  for time, channel, direction, identifier, data, line in rows)
+    frames = Rows(Frame(time, channel, direction, identifier, '', data, line, fd)
+                  for time, channel, direction, identifier, data, line, fd in rows)
     frames.start = getattr(rows, 'start', None)
     frames.errors = list(getattr(rows, 'errors', ()))
     return frames
@@ -326,6 +327,7 @@ def parse_trace(source, source_name, progress=None):
                     frame = Frame(float(match.group(1)), match.group(2), match.group(3), int(match.group(4), 16),
                                   '', hex_bytes(data.group(2), int(data.group(1))), number)
         if frame is not None and frame.data:
+            frame.fd = ASC_FD_LINE_RE.match(line) is not None
             frames.append(frame)
             continue
         error = ASC_ERROR_RE.match(line)

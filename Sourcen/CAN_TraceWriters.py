@@ -51,7 +51,7 @@ def is_extended(frame):
 
 
 def is_fd(frame):
-    return len(frame.data) > 8
+    return frame.fd or len(frame.data) > 8
 
 
 def dlc_code(length):
@@ -118,14 +118,14 @@ def write_asc(handle, frames, environment, start, errors=None):
             number = numbers.get(item) or (int(item) if str(item).isdigit() else 1)
             handle.write('  %.6f %d  %s\n' % (time, number, value.replace('Error Frame', 'ErrorFrame', 1)))
             continue
-        handle.write(asc_line(item, numbers[item.channel], is_fd(item)))
+        handle.write(asc_line(item, numbers[item.channel]))
     handle.write('End TriggerBlock\n')
 
 
-def asc_line(frame, number, fd):
-    """One frame as a line of an ASC file (number: CAN channel; fd: write it as CAN FD)."""
+def asc_line(frame, number):
+    """One frame as a line of an ASC file (number: CAN channel)."""
     identifier = ('%X' % frame.id) + ('x' if is_extended(frame) else '')
-    if fd:
+    if is_fd(frame):
         data = fd_data(frame)
         return '  %.6f CANFD %3d %s %8s %32s 1 0 %X %2d %s\n' % (
             frame.time, number, frame.direction, identifier, '', dlc_code(len(data)), len(data), _hex(data))
@@ -201,11 +201,11 @@ def write_slcan(handle, frames, environment, start):
 
 
 def write_csv(handle, frames, environment, start):
-    handle.write('timestamp_s,epoch_timestamp,channel,can_id_hex,can_id_dec,direction,dlc,data_hex\n')
+    handle.write('timestamp_s,epoch_timestamp,channel,can_id_hex,can_id_dec,direction,dlc,data_hex,fd\n')
     for frame in frames:
-        handle.write('%.6f,%.6f,%s,0x%X,%d,%s,%d,%s\n' % (
+        handle.write('%.6f,%.6f,%s,0x%X,%d,%s,%d,%s,%d\n' % (
             frame.time, start + frame.time, frame.channel, frame.id, frame.id, frame.direction,
-            dlc_code(len(frame.data)), _hex(frame.data)))
+            dlc_code(len(frame.data)), _hex(frame.data), is_fd(frame)))
 
 
 # ---------------------------------------------------------------- binary formats

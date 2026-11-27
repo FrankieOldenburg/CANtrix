@@ -5,10 +5,11 @@ Textformate: PEAK PCAN-View (.trc), BUSMASTER (.log), Linux candump (.log), SLCA
 CSV (.csv, auch SavvyCAN). Binärformate: Vector BLF (.blf), ASAM MDF4 (.mf4), Vehicle Spy VSB (.vsb), python-can SQLite (.db) und PCAP/PCAPNG mit SocketCAN-Frames.
 Erkannt wird am Inhalt, nicht an der Dateiendung.
 
-Jeder Leser liefert eine Rows-Liste mit Tupeln (zeit_s, kanal, richtung, id, daten, zeile) und dem
+Jeder Leser liefert eine Rows-Liste mit Tupeln (zeit_s, kanal, richtung, id, daten, zeile, fd) und dem
 Attribut start (Messbeginn als naive Ortszeit, datetime, oder None): zeit_s relativ zum Messbeginn,
 kanal als Text ('1', 'can0'), richtung 'Rx'/'Tx', id ohne Extended-Flag, daten als bytes, zeile =
-Zeilennummer (Text) bzw. laufende Nummer (binär). Remote-, Fehler- und leere Frames entfallen.
+Zeilennummer (Text) bzw. laufende Nummer (binär), fd = CAN-FD-Botschaft (auch mit höchstens 8 Byte;
+BUSMASTER, SavvyCAN und SQLite kennzeichnen das nicht). Remote-, Fehler- und leere Frames entfallen.
 
 Nur Standardbibliothek, kompatibel mit Python 3.6.
 """
@@ -211,7 +212,8 @@ def parse_trc(lines, progress=None):
             continue
         data = _hex_data(data_tokens[:length])
         if data:
-            rows.append((time, fields.get('B', '1'), direction, identifier, data, number))
+            fd = version >= (2, 0) and kind in TRC_DATA_TYPES[1:]
+            rows.append((time, fields.get('B', '1'), direction, identifier, data, number, fd))
     return rows
 
 
@@ -286,7 +288,7 @@ def parse_busmaster(lines, progress=None):
         elif mode == 'relative':
             time = previous = previous + time
         if data:
-            rows.append((time, tokens[2], tokens[1], identifier, data, number))
+            rows.append((time, tokens[2], tokens[1], identifier, data, number, False))
     return rows
 
 
@@ -319,7 +321,8 @@ def parse_candump(lines, progress=None):
             if int(identifier, 16) & CAN_ERR_FLAG:
                 rows.errors.append((float(time), interface, socketcan_error_text(int(identifier, 16))))
                 continue
-            row = (float(time), interface, 'Tx' if direction == 'T' else 'Rx', int(identifier, 16), data, number)
+            row = (float(time), interface, 'Tx' if direction == 'T' else 'Rx', int(identifier, 16), data, number,
+                   bool(fd))
         else:
             match = CANDUMP_SCREEN_RE.match(line)
             if not match:
@@ -330,7 +333,8 @@ def parse_candump(lines, progress=None):
             if int(identifier, 16) & CAN_ERR_FLAG:
                 rows.errors.append((moment, interface, socketcan_error_text(int(identifier, 16))))
                 continue
-            row = (moment, interface, 'Rx', int(identifier, 16), data, number)
+            # candump prints the length of CAN FD frames with two digits: [08], classic frames [8]
+            row = (moment, interface, 'Rx', int(identifier, 16), data, number, len(length) == 2)
         if row[4]:
             rows.append(row)
     return relative_times(rows)
@@ -372,7 +376,7 @@ def parse_slcan(lines, progress=None):
             time = (offset + millis) / 1000.0
         else:
             time = (number - 1) * 0.001  # without timestamps: 1 ms per line
-        rows.append((time, '1', 'Rx', identifier, binascii.unhexlify(payload), number))
+        rows.append((time, '1', 'Rx', identifier, binascii.unhexlify(payload), number, kind not in 'tT'))
     return rows
 
 
@@ -387,6 +391,7 @@ CSV_COLUMNS = {
     'data': ('data_hex', 'data', 'daten', 'payload', 'bytes'),
     'remote': ('remote', 'is_remote_frame', 'rtr'),
     'error': ('error', 'is_error_frame'),
+    'fd': ('fd', 'is_fd'),
 }
 
 
@@ -454,7 +459,8 @@ def parse_csv(lines, progress=None):
         direction = value('direction', 'Rx')
         direction = 'Tx' if direction.lower() in ('tx', 't', 'true', '1') else 'Rx'
         if data:
-            rows.append((time, value('channel', '1') or '1', direction, identifier, data, number))
+            rows.append((time, value('channel', '1') or '1', direction, identifier, data, number,
+                         value('fd').lower() in ('1', 'true')))
             if rows.start is None and 'epoch_timestamp' in names and time < EPOCH_LIMIT:
                 try:  # relative times with an extra Unix time column
                     rows.start = local_time(float(fields[names.index('epoch_timestamp')]) - time)
@@ -496,7 +502,7 @@ def parse_savvycan(lines, progress=None):
         if data:
             rows.append((time, str(int(fields[bus]) + 1) if bus is not None and fields[bus].isdigit() else '1',
                          'Tx' if direction is not None and fields[direction].lower() == 'tx' else 'Rx',
-                         identifier, data, number))
+                         identifier, data, number, False))
     return relative_times(rows)
 
 
@@ -544,14 +550,14 @@ BLF_CAN_FD_MSG_64 = struct.Struct('<BBBBIIIIIIIHBBI')
 
 
 def _blf_frame(kind, body):
-    """Return (channel, direction, id, data) or None."""
+    """Return (channel, direction, id, data, fd) or None."""
     if kind in (BLF_CAN_MESSAGE, BLF_CAN_MESSAGE2):
         if len(body) < BLF_CAN_MSG.size:
             return None
         channel, flags, dlc, identifier, data = BLF_CAN_MSG.unpack_from(body)
         if flags & 0x80:
             return None  # remote frame
-        return channel, 'Tx' if flags & 1 else 'Rx', identifier & 0x1FFFFFFF, data[:min(dlc, 8)]
+        return channel, 'Tx' if flags & 1 else 'Rx', identifier & 0x1FFFFFFF, data[:min(dlc, 8)], False
     if kind == BLF_CAN_FD_MESSAGE:
         if len(body) < BLF_CAN_FD_MSG.size:
             return None
@@ -559,7 +565,7 @@ def _blf_frame(kind, body):
         if flags & 0x80:
             return None
         length = dlc_length(dlc, bool(fd_flags & 1))
-        return channel, 'Tx' if flags & 1 else 'Rx', identifier & 0x1FFFFFFF, data[:length]
+        return channel, 'Tx' if flags & 1 else 'Rx', identifier & 0x1FFFFFFF, data[:length], bool(fd_flags & 1)
     if kind == BLF_CAN_FD_MESSAGE_64:
         if len(body) < BLF_CAN_FD_MSG_64.size:
             return None
@@ -570,7 +576,7 @@ def _blf_frame(kind, body):
             return None  # remote frame
         length = valid or dlc_length(dlc, bool(fd_flags & 0x1000))
         data = body[BLF_CAN_FD_MSG_64.size:BLF_CAN_FD_MSG_64.size + length]
-        return channel, 'Tx' if direction == 1 else 'Rx', identifier & 0x1FFFFFFF, data
+        return channel, 'Tx' if direction == 1 else 'Rx', identifier & 0x1FFFFFFF, data, bool(fd_flags & 0x1000)
     return None
 
 
@@ -600,7 +606,7 @@ def _blf_objects(buffer, rows):
             frame = _blf_frame(kind, body)
             if frame and frame[3]:
                 time = stamp * (1e-5 if flags == 1 else 1e-9)  # 1: 10 µs, 2: 1 ns
-                rows.append((time, str(frame[0]), frame[1], frame[2], frame[3], len(rows) + 1))
+                rows.append((time, str(frame[0]), frame[1], frame[2], frame[3], len(rows) + 1, frame[4]))
         elif kind in BLF_ERROR_KINDS and size >= header_size + 1:
             if header_version == 2:
                 flags, _, _, _, stamp = BLF_HEADER_V2.unpack_from(buffer, pos + BLF_OBJ.size)
@@ -853,7 +859,7 @@ def parse_mf4(data, progress=None):
         _report(progress, group_number + 1, len(groups))
     rows.sort(key=lambda row: row[0])
     shift = rows[0][0] if rows and rows[0][0] < 0 else 0.0  # times before the start time of the file
-    result = Rows((row[0] - shift,) + row[1:5] + (number,) for number, row in enumerate(rows, 1))
+    result = Rows((row[0] - shift,) + row[1:5] + (number, row[5]) for number, row in enumerate(rows, 1))
     start = _mdf_start(header_body)
     result.environment = rows.environment
     for values in result.environment.values():
@@ -932,7 +938,8 @@ def _mdf_can_rows(mdf, group, groups_by_offset):
         short = _mdf_short_name(channel['name'])
         for role, choices in (('id', ('id', 'can_id', 'identifier', 'arbitration_id')), ('dlc', ('dlc',)),
                               ('length', ('datalength',)), ('data', ('databytes', 'data', 'data_bytes')),
-                              ('channel', ('buschannel', 'channel')), ('dir', ('dir', 'direction'))):
+                              ('channel', ('buschannel', 'channel')), ('dir', ('dir', 'direction')),
+                              ('edl', ('edl',))):
             if short in choices and role not in roles:
                 roles[role] = channel
     if 'id' not in roles or 'data' not in roles:
@@ -968,7 +975,8 @@ def _mdf_can_rows(mdf, group, groups_by_offset):
         channel = str(_mdf_value(record, roles['channel'])) if 'channel' in roles else '1'
         direction = 'Tx' if 'dir' in roles and _mdf_value(record, roles['dir']) == 1 else 'Rx'
         identifier = int(_mdf_value(record, roles['id'])) & 0x1FFFFFFF
-        rows.append((float(time), channel, direction, identifier, bytes(data)))
+        fd = 'edl' in roles and _mdf_value(record, roles['edl']) == 1
+        rows.append((float(time), channel, direction, identifier, bytes(data), fd))
     return rows
 
 
@@ -985,13 +993,14 @@ def _socketcan_error(packet):
 
 
 def _socketcan_frame(packet):
-    """Return (id, data) of a SocketCAN frame (big-endian ID as in LINKTYPE_CAN_SOCKETCAN) or None."""
+    """Return (id, data, fd) of a SocketCAN frame (big-endian ID as in LINKTYPE_CAN_SOCKETCAN) or None."""
     if len(packet) < 8:
         return None
     can_id, length = struct.unpack_from('>IB', packet)
     if can_id & (CAN_RTR_FLAG | CAN_ERR_FLAG):
         return None
-    return can_id & 0x1FFFFFFF, bytes(packet[8:8 + min(length, 64)])
+    fd = len(packet) == 72 or bool(packet[5] & 0x04)  # size of a CAN FD frame or the flag FDF
+    return can_id & 0x1FFFFFFF, bytes(packet[8:8 + min(length, 64)]), fd
 
 
 def parse_pcap(data, progress=None):
@@ -1013,7 +1022,7 @@ def parse_pcap(data, progress=None):
             rows.errors.append((seconds + fraction * scale, '1', error))
         frame = _socketcan_frame(packet)
         if frame and frame[1]:
-            rows.append((seconds + fraction * scale, '1', 'Rx', frame[0], frame[1], len(rows) + 1))
+            rows.append((seconds + fraction * scale, '1', 'Rx', frame[0], frame[1], len(rows) + 1, frame[2]))
         if len(rows) % 5000 == 0:
             _report(progress, pos, len(data))
     return relative_times(rows)
@@ -1058,7 +1067,7 @@ def parse_pcapng(data, progress=None):
                     rows.errors.append((time, str(interface + 1), error))
                 frame = _socketcan_frame(body[20:20 + captured])
                 if frame and frame[1]:
-                    rows.append((time, str(interface + 1), 'Rx', frame[0], frame[1], len(rows) + 1))
+                    rows.append((time, str(interface + 1), 'Rx', frame[0], frame[1], len(rows) + 1, frame[2]))
         pos += length
         if len(rows) % 5000 == 0:
             _report(progress, pos, len(data))
@@ -1110,7 +1119,7 @@ def parse_vsb(data, progress=None):
             continue
         identifier = struct.unpack_from('<I', record, 36)[0] & 0x1FFFFFFF
         rows.append((time, VSB_NETWORKS.get(network, str(network)), 'Tx' if status & VSB_TX else 'Rx',
-                     identifier, bytes(payload), len(rows) + 1))
+                     identifier, bytes(payload), len(rows) + 1, protocol == 30))
         if len(rows) % 5000 == 0:
             _report(progress, pos, len(data))
     if first is not None and rows:
@@ -1140,7 +1149,7 @@ def parse_sqlite(data, progress=None):
                     'SELECT ts, arbitration_id, remote, error, dlc, data FROM messages ORDER BY ts'), 1):
                 payload = bytes(payload or b'')[:dlc_length(dlc or len(payload or b''))]
                 if payload and not remote and not error:
-                    rows.append((float(time), '1', 'Rx', int(identifier), payload, number))
+                    rows.append((float(time), '1', 'Rx', int(identifier), payload, number, False))
         except sqlite3.Error as failure:
             raise ValueError(tr('Keine python-can-Datenbank (%s).') % failure)
         finally:
