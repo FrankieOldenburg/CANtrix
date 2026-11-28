@@ -697,6 +697,7 @@ EN = {
         'Click: cursor (with 2nd cursor: the nearer one) · Right click: menu (copy, 2nd cursor) · Mouse wheel and drag: zoom '
         'the selected axis · Shift+mouse wheel: other axis',
     '2. Cursor': '2nd cursor',
+    'Fehlerwerte': 'Error values',
     'Bitte warten, es wird noch geladen…': 'Please wait, still loading…',
     '%s Datenbank-Nachrichten geladen': '%s database messages loaded',
     'Dateien geladen': 'Files loaded',

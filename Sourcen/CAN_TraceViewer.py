@@ -409,6 +409,11 @@ class SignalDecoder(object):
             raw -= 1 << self.length
         return raw, raw * self.factor + self.offset, self.values.get(float(raw), '')
 
+    def is_error_value(self, raw):
+        """True for an unsigned signal of at least one byte with all bits set (0xFF, 0xFFFF, ...), the usual
+        marker of an invalid value."""
+        return not self.signed and self.length >= 8 and raw == (1 << self.length) - 1
+
     def hex_text(self, decoded):
         """' (0x7A)': the raw value in hex (two's complement for negative raw values), '' without a value."""
         if decoded is None:
@@ -424,11 +429,12 @@ class SignalDecoder(object):
 
 
 class Series(object):
-    __slots__ = ('key', 'name', 'message', 'unit', 'xs', 'ys', 'status')
+    __slots__ = ('key', 'name', 'message', 'unit', 'xs', 'ys', 'status', 'errors')
 
     def __init__(self, key, name, message, unit):
         self.key, self.name, self.message, self.unit = key, name, message, unit
         self.xs, self.ys, self.status = [], [], []
+        self.errors = []  # per sample: error value (see SignalDecoder.is_error_value); empty without
 
 
 # ---------------------------------------------------------------- loading (worker thread)
@@ -556,6 +562,7 @@ if tk is not None:
             self.show_description = tk.BooleanVar(value=False)  # column with the description of the database
             self.zoom_axis = tk.StringVar(value='x')  # axis zoomed by mouse wheel and dragging: 'x' (time) or 'y'
             self.second_cursor = tk.BooleanVar(value=False)  # 2nd cursor with differences to the 1st one
+            self.show_error_values = tk.BooleanVar(value=False)  # red background behind error values in the graph
             self.cursor2_time = None
             self.cursor_info = tk.StringVar()  # times of both cursors and their difference, below the graph
             self.trace_filter = tk.StringVar()
@@ -1183,6 +1190,8 @@ if tk is not None:
                                 style='Toolbutton').pack(side=tk.LEFT, padx=(16 if value == 'x' else 0, 0))
             ttk.Checkbutton(toolbar, text=tr('2. Cursor'), variable=self.second_cursor, style='Toolbutton',
                             command=self.on_second_cursor).pack(side=tk.LEFT, padx=(16, 0))
+            ttk.Checkbutton(toolbar, text=tr('Fehlerwerte'), variable=self.show_error_values,
+                            command=self.schedule_plot).pack(side=tk.LEFT, padx=(16, 0))
             self._hint(area, tr('Klick: Cursor (mit 2. Cursor: der nähere) · Rechtsklick: Menü (Kopieren, 2. Cursor) · Mausrad und '
                                 'Ziehen: Zoom in der gewählten Achse · Shift+Mausrad: andere Achse'), (8, 0, 8, 6))
             self.cursor_info_label = ttk.Label(area, textvariable=self.cursor_info, padding=(12, 4, 12, 8))
@@ -1542,6 +1551,7 @@ if tk is not None:
                 'showDescription': self.show_description.get(), 'showDebugger': self.show_debugger.get(),
                 'debugger': self.debugger_settings,
                 'secondCursor': self.second_cursor.get(), 'cursor2Time': self.cursor2_time,
+                'showErrorValues': self.show_error_values.get(),
                 'traceIndex': self.trace_index, 'traces': self._traces_for_save(),
                 'graphIndex': self.graph_index, 'graphs': self._graphs_for_save(),
             }
@@ -1563,6 +1573,7 @@ if tk is not None:
             self.show_errors.set(view.get('showErrors') is True)
             self.show_description.set(view.get('showDescription') is True)
             self.show_debugger.set(view.get('showDebugger') is True)
+            self.show_error_values.set(view.get('showErrorValues') is True)
             self.debugger_settings = normalize_settings(view.get('debugger'))
             self._debug_environment_names = watch_environment_names(self.debugger_settings)
             self.zoom_axis.set('y' if view.get('zoomAxis') == 'y' else 'x')
@@ -1813,11 +1824,13 @@ if tk is not None:
                         xs.append(frame.time)
                         ys.append(value[1])
                         status.append(value[2])
+                        result.errors.append(decoder.is_error_value(value[0]))
                 if any(xs[i] > xs[i + 1] for i in range(len(xs) - 1)):
                     order = sorted(range(len(xs)), key=xs.__getitem__)
                     result.xs = [xs[i] for i in order]
                     result.ys = [ys[i] for i in order]
                     result.status = [status[i] for i in order]
+                    result.errors = [result.errors[i] for i in order]
             self.series_cache[key] = result
             return result
 
@@ -1942,6 +1955,7 @@ if tk is not None:
                 return series
             clipped = Series(series.key, series.name, series.message, series.unit)
             clipped.xs, clipped.ys, clipped.status = series.xs[:count], series.ys[:count], series.status[:count]
+            clipped.errors = series.errors[:count]
             return clipped
 
         def row_key(self, frame, index):
@@ -2571,6 +2585,16 @@ if tk is not None:
                         else [0.0, 1.0])
             lane_height = plot_height / len(series_list)
 
+            if self.show_error_values.get():  # first, so that grid, cursors and curves stay visible
+                # Tk has no transparency: the color is DANGER mixed with the background of the graph.
+                red, back = canvas.winfo_rgb(C.DANGER), canvas.winfo_rgb(C.SURFACE)
+                fill = '#%02x%02x%02x' % tuple(int(0.3 * a + 0.7 * b) >> 8 for a, b in zip(red, back))
+                for index, series in enumerate(series_list):
+                    lane_top = top + index * lane_height
+                    for begin, end in self._error_spans(series, x0, x1, px):
+                        canvas.create_rectangle(begin, lane_top + 1, end, lane_top + lane_height - 1,
+                                                fill=fill, outline='', tags='error_value')
+
             for step in range(6):
                 xx = left + step * plot_width / 5
                 canvas.create_line(xx, top, xx, height - bottom, fill=C.GRID)
@@ -2678,6 +2702,27 @@ if tk is not None:
                                 'x': (x0, x1), 'full_x': full_x, 'lanes': lanes, 'y_window': list(y_window),
                                 'signals': [(key, series.message + '.' + series.name if series.message
                                              else series.name) for key, series in signals]}
+
+        @staticmethod
+        def _error_spans(series, x0, x1, px):
+            """[left, right] pixel ranges within x0..x1 in which an error value holds. A value holds until the
+            next sample; every range is at least 2 pixels wide, ranges that touch are joined."""
+            errors, xs = series.errors, series.xs
+            spans = []
+            first = max(0, bisect.bisect_left(xs, x0) - 1)
+            for i in range(first, min(len(errors), bisect.bisect_right(xs, x1))):
+                if not errors[i]:
+                    continue
+                end = xs[i + 1] if i + 1 < len(xs) else xs[i]
+                if end < x0:
+                    continue
+                begin = px(max(xs[i], x0))
+                end = max(px(min(end, x1)), begin + 2)
+                if spans and begin <= spans[-1][1] + 0.5:
+                    spans[-1][1] = max(spans[-1][1], end)
+                else:
+                    spans.append([begin, end])
+            return spans
 
         @staticmethod
         def _draw_series(canvas, series, i0, i1, px, py, vy0, vy1, plot_width, color, x0, x1):
