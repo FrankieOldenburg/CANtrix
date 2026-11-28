@@ -46,6 +46,7 @@ from CAN_VectorIO import VectorIODialog, create_vector_io_database, normalize_ve
 from CAN_BLEMonitor import assign_names, create_ble_database, normalize_ble_variables
 from CAN_DbcEditor import copy_generated_dbc, generated_category
 from CAN_TraceWriters import write_trace
+from CAN_Trixie import Trixie
 from CAN_Databases import (DatabaseConfigWindow, config_databases, database_summary, load_databases,
                            normalize_databases)
 
@@ -243,7 +244,6 @@ def existing_file(path):
 
 
 if tk is not None:
-
     class AnalyserApp(object):
         def __init__(self, root):
             self.root = root
@@ -291,6 +291,8 @@ if tk is not None:
             set_language(self.settings.get('language'))
             self.status_var = tk.StringVar()
             set_text(self.status_var, 'Bereit')
+            self.trixie_enabled = tk.BooleanVar(value=False)
+            self.trixie = None
             set_dark_mode(root, self.settings.get('dark_mode') is not False)  # dark by default
             apply_appearance(root)
             self.dark_var = tk.BooleanVar(value=is_dark_mode())
@@ -330,6 +332,7 @@ if tk is not None:
             self.theme = Theme(root)
             self._build_menu()
             self._build_body()
+            self.trixie = Trixie(root, self.status_var)
             # The toolbar (with the time controls) must fit: widen the window if it is narrower.
             root.update_idletasks()
             size = re.match(r'(\d+)x(\d+)', geometry)
@@ -445,6 +448,8 @@ if tk is not None:
                 language_menu.add_checkbutton(label=name, variable=self.language_vars[code],
                                               command=lambda code=code: self.change_language(code))
             window_menu.add_cascade(label=tr('Sprache'), menu=language_menu)
+            window_menu.add_checkbutton(label=tr('Trixie anzeigen'), variable=self.trixie_enabled,
+                                         command=self.toggle_trixie)
             if CAN_Tray.AVAILABLE:
                 window_menu.add_separator()
                 label_text = tr('In die Menüleiste') if aqua else tr('In den Infobereich (Systemtray)')
@@ -803,6 +808,13 @@ if tk is not None:
             self.time_slider.bind('<Configure>', lambda event: self._place_markers(), add='+')
             self._update_recording_buttons()
 
+        def toggle_trixie(self):
+            if self.trixie_enabled.get():
+                self.trixie.show()
+                self.trixie.say('Hallo! Ich bin Trixie, deine CAN-Koboldin.')
+            else:
+                self.trixie.hide()
+
         def _choose_source(self, value):
             self.source.set(value)
             self.change_source()
@@ -1106,6 +1118,7 @@ if tk is not None:
             self.loading += 1
             self.root.configure(cursor='watch')
             set_text(self.status_var, 'Lade %s…', ', '.join(self._request_text(value) for value in request.values()))
+            self.trixie.say('Konfiguration wird geladen …' if self.config_path else 'Daten werden geladen …')
             cache = {'database': dict(self._database_cache), 'trace': dict(self._trace_cache)}  # for the thread
 
             def run():
@@ -1153,10 +1166,12 @@ if tk is not None:
                         done()
                     if errors:
                         set_text(self.status_var, 'Laden fehlgeschlagen: %s', errors[0])
+                        self.trixie.say('Huch! Beim Laden ist etwas schiefgelaufen.')
                     elif fresh:
                         names = [item['name'] for value in fresh.values() for item in
                                  (value if isinstance(value, list) else [value]) if item and item['name']]
                         set_text(self.status_var, 'Geladen: %s', ', '.join(names))
+                        self.trixie.say('Alles geladen. Die CAN-Welt ist bereit!')
             except queue.Empty:
                 pass
             self._update_progress()
@@ -1499,6 +1514,7 @@ if tk is not None:
             self._push_range()
             self._place_markers()
             self._update_recording_buttons()
+            self.trixie.say('Online-Modus gestartet' if source == 'live' else 'Offline-Modus aktiviert')
 
         def on_time_slider(self, value):
             if self._setting_slider:
@@ -2445,6 +2461,7 @@ if tk is not None:
             return variables, databases
 
         def load_config(self, path):
+            self.trixie.say('Konfiguration wird geladen …')
             try:
                 with open(path, encoding='utf-8') as handle:
                     config = json.load(handle)
@@ -2524,6 +2541,7 @@ if tk is not None:
                     self.open_window('panel_viewer', windows['panel_viewer'])  # an empty Panel Viewer
                 if not self.errors:
                     set_text(self.status_var, 'Konfiguration geladen: %s', os.path.basename(path))
+                    self.trixie.say('Konfiguration geladen. Trixie ist startklar!')
                 if missing:
                     messagebox.showwarning('CANtrix', tr('Nicht gefunden:\n%s') % '\n'.join(missing),
                                            parent=self.root)

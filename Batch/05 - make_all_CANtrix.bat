@@ -93,6 +93,7 @@ echo Die exe wird erstellt ^(das dauert einige Minuten^) ...
     --add-data "%PROJECT%\Bilder\CANtrix-Icon.png;Bilder" ^
     --add-data "%PROJECT%\Bilder\CANtrix.ico;Bilder" ^
     --add-data "%PROJECT%\Bilder\CANtrix-Hintergrund.png;Bilder" ^
+    --add-data "%PROJECT%\Bilder\Trixie-CANtrix.png;Bilder" ^
     --distpath "%WORKDIR%\dist" ^
     --workpath "%WORKDIR%\build" ^
     --specpath "%WORKDIR%" ^

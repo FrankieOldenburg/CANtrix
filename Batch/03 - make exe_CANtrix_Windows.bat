@@ -70,6 +70,7 @@ if exist "%PROJECT%\build\pyinstaller" rmdir /s /q "%PROJECT%\build\pyinstaller"
     --add-data "%PROJECT%\Bilder\CANtrix-Icon.png;Bilder" ^
     --add-data "%PROJECT%\Bilder\CANtrix.ico;Bilder" ^
     --add-data "%PROJECT%\Bilder\CANtrix-Hintergrund.png;Bilder" ^
+    --add-data "%PROJECT%\Bilder\Trixie-CANtrix.png;Bilder" ^
     --distpath "%PROJECT%\dist" ^
     --workpath "%PROJECT%\build\pyinstaller" ^
     --specpath "%PROJECT%\build" ^

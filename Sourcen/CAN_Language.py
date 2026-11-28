@@ -353,6 +353,16 @@ DE = {
 # ---------------------------------------------------------------- English texts
 
 EN = {
+    'Hallo! Ich bin Trixie, deine CAN-Koboldin.': 'Hi! I’m Trixie, your CAN gremlin.',
+    'Online-Modus gestartet': 'Online mode started',
+    'Offline-Modus aktiviert': 'Offline mode enabled',
+    'Konfiguration wird geladen …': 'Loading configuration …',
+    'Daten werden geladen …': 'Loading data …',
+    'Huch! Beim Laden ist etwas schiefgelaufen.': 'Oops! Something went wrong while loading.',
+    'Alles geladen. Die CAN-Welt ist bereit!': 'All loaded. The CAN world is ready!',
+    'Konfiguration geladen. Trixie ist startklar!': 'Configuration loaded. Trixie is ready!',
+    'Alles ruhig in der CAN-Galaxis!': 'All quiet in the CAN galaxy!',
+    'Trixie anzeigen': 'Show Trixie',
     # CANtrix.py: menu, toolbar, status
     'Bereit': 'Ready',
     'Signalwerte': 'Signal values',
