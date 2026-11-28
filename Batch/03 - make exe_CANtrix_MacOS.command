@@ -68,6 +68,7 @@ if ! python3 -m PyInstaller --noconfirm --clean --windowed \
     --add-data "$PROJECT/Bilder/CANtrix-Icon.png:Bilder" \
     --add-data "$PROJECT/Bilder/CANtrix-Hintergrund.png:Bilder" \
     --add-data "$PROJECT/Bilder/Trixie-CANtrix.png:Bilder" \
+    --add-data "$PROJECT/Bilder/Trixie.png:Bilder" \
     --distpath "$PROJECT/dist" \
     --workpath "$PROJECT/build/pyinstaller" \
     --specpath "$PROJECT/build" \
