@@ -1018,12 +1018,14 @@ if tk is not None:
             if self.database_config is not None and self.database_config.window.winfo_exists():
                 self.database_config.window.deiconify()
                 self.database_config.window.lift()
+                self.trixie.say('Datenbasen-Fenster wieder da. Ich suche die Bits!')
                 return
             self.database_config = DatabaseConfigWindow(
                 self.root, self.database_entries, self.set_databases,
                 channels=lambda: trace_channels(self.trace['frames']) if self.trace else [],
                 info=self._database_info, attach_menu=self.attach_menu,
                 initial_dir=self._initial_dir(self.database_path))
+            self.trixie.say('Datenbasen-Fenster geöffnet. Wer findet die meisten Signale?')
 
         def _database_window(self):
             window = self.database_config
@@ -1045,10 +1047,12 @@ if tk is not None:
             if self._trace_window() is not None:
                 self.trace_config.window.deiconify()
                 self.trace_config.window.lift()
+                self.trixie.say('Trace-Auswahl wieder geöffnet. Auf zur Zeitreise!')
                 return
             self.trace_config = TraceConfigWindow(self.root, self.trace_entries, self.set_traces,
                                                   info=self._trace_info, attach_menu=self.attach_menu,
                                                   initial_dir=self._initial_dir(self.trace_path))
+            self.trixie.say('Trace-Auswahl geöffnet. Mal sehen, was die Botschaften erzählen.')
 
         def _trace_window(self):
             window = self.trace_config
@@ -1171,7 +1175,13 @@ if tk is not None:
                         names = [item['name'] for value in fresh.values() for item in
                                  (value if isinstance(value, list) else [value]) if item and item['name']]
                         set_text(self.status_var, 'Geladen: %s', ', '.join(names))
-                        self.trixie.say('Alles geladen. Die CAN-Welt ist bereit!')
+                        kinds = set(fresh)
+                        if 'database' in kinds:
+                            self.trixie.comment('database_loaded')
+                        elif 'trace' in kinds:
+                            self.trixie.comment('trace_loaded')
+                        elif 'panel' in kinds:
+                            self.trixie.comment('panel_loaded')
             except queue.Empty:
                 pass
             self._update_progress()
@@ -1262,6 +1272,7 @@ if tk is not None:
                 window.deiconify()
                 window.lift()
                 window.focus_force()
+                self.trixie.comment('window', window_title(key))
                 return
             if state is None:
                 remembered = self.settings.get('windows', {}).get(key)
@@ -1282,6 +1293,7 @@ if tk is not None:
                     app.on_saved = self._database_saved
                     app.on_new = self._database_created
                     app.on_open = self.configure_databases
+                    app.on_action = self._database_action
                 elif key == 'generator':
                     from CAN_Generator import GeneratorApp
                     app = GeneratorApp(window, settings=settings, database=self.database,
@@ -1358,6 +1370,7 @@ if tk is not None:
                 self._master().show_time()
                 self._time_changed()
             self._update_recording_buttons()
+            self.trixie.comment('window', window_title(key))
             if is_panel_key(key) and self._viewer() is not None and app is self._master():
                 app.set_cursor(self._viewer().cursor_time)
             window.protocol('WM_DELETE_WINDOW', lambda key=key: self.close_window(key, forget=True))
@@ -1394,6 +1407,9 @@ if tk is not None:
             """The Database Editor saved changes: read the databases again (viewers, status, trace)."""
             if self.database_entries:
                 self.set_databases(self.database_entries)
+
+        def _database_action(self, action, name):
+            self.trixie.comment(action, name)
 
         def _database_created(self, path):
             """The Database Editor created an empty DBC file: add it to the databases of the configuration."""
@@ -1514,7 +1530,7 @@ if tk is not None:
             self._push_range()
             self._place_markers()
             self._update_recording_buttons()
-            self.trixie.say('Online-Modus gestartet' if source == 'live' else 'Offline-Modus aktiviert')
+            self.trixie.comment('online' if source == 'live' else 'offline')
 
         def on_time_slider(self, value):
             if self._setting_slider:
@@ -1701,10 +1717,20 @@ if tk is not None:
         def start_recording(self):
             self._start()
             self._update_recording_buttons()  # shows what really happened (e.g. not started)
+            if self.recording():
+                self.trixie.comment('record_started')
+            elif self.source.get() != 'live' and self.playing():
+                self.trixie.comment('play_started')
 
         def stop_recording(self):
+            was_recording = self.recording()
+            was_playing = self.playing()
             self._stop()
             self._update_recording_buttons()
+            if was_recording:
+                self.trixie.comment('record_stopped')
+            elif was_playing:
+                self.trixie.comment('play_stopped')
 
         def _start(self):
             """Button Start. Live: the Trace Viewer (opened if needed) records and shows the frames. Trace: the
@@ -2115,6 +2141,7 @@ if tk is not None:
             self.remember_config(path)
             self.render_status()
             set_text(self.status_var, 'Konfiguration gespeichert: %s', os.path.basename(path))
+            self.trixie.comment('config_saved')
 
         # ------------------------------------------------------------ recent configurations
 
@@ -2192,6 +2219,7 @@ if tk is not None:
             self._play_engaged = False
             set_text(self.status_var, 'Neue Konfiguration')
             self._update_recording_buttons()
+            self.trixie.comment('config_new')
 
         # ------------------------------------------------------------ plugins
 
@@ -2378,6 +2406,7 @@ if tk is not None:
             run = PluginRun(self.root, plugin, command, self.attach_menu, database_paths, self.channel)
             self.plugin_runs.append(run)
             set_text(self.status_var, 'Plugin gestartet: %s', plugin['name'])
+            self.trixie.comment('plugin_started', plugin['name'])
             engine = self._viewer()
             recording = engine.recording() if run.live and engine is not None else None
             if recording is not None:

@@ -3,6 +3,7 @@
 import os
 import sys
 import ctypes
+import random
 
 try:
     import tkinter as tk
@@ -62,7 +63,7 @@ class _MacTrixieOverlay(object):
                               (_CGRect, _CGRect(_CGPoint(26, 38), _CGSize(288, 62))))
         for selector in ('setBezeled:', 'setDrawsBackground:', 'setEditable:', 'setSelectable:'):
             self.send(self.text, selector, (ctypes.c_bool, False), restype=None)
-        self.send(self.text, 'setAlignment:', (ctypes.c_long, 2), restype=None)
+        self.send(self.text, 'setAlignment:', (ctypes.c_long, 0), restype=None)
         self.send(self.text, 'setTextColor:', self.send(self.cls('NSColor'), 'colorWithCalibratedRed:green:blue:alpha:',
                     (ctypes.c_double, 38 / 255.0), (ctypes.c_double, 50 / 255.0),
                     (ctypes.c_double, 56 / 255.0), (ctypes.c_double, 1.0)), restype=None)
@@ -236,7 +237,7 @@ if tk is not None:
                              fill=fill, outline=edge, width=2, smooth=True, splinesteps=12, tags=('bubble',))
             c.create_polygon(141, 75, 158, 96, 176, 75, fill=fill, outline=edge, width=2,
                              joinstyle=tk.ROUND, tags=('bubble',))
-            self._bubble_label = c.create_text(150, 43, text=self.bubble_text, width=245, justify=tk.CENTER,
+            self._bubble_label = c.create_text(34, 43, anchor=tk.W, text=self.bubble_text, width=245, justify=tk.LEFT,
                                                fill='#263238', font=('Helvetica', 11, 'bold'), tags=('bubble',))
 
         def _animate(self):
@@ -266,6 +267,30 @@ if tk is not None:
             if self.window.wm_state() != 'withdrawn':
                 self.window.attributes('-topmost', True)
                 self.window.lift()
+
+        def comment(self, event, *args):
+            phrases = {
+                'window': ('%s geöffnet. Ich halte hier die Stellung!', '%s ist da. Jetzt wird gearbeitet!'),
+                'signal_added': ('Signal „%s“ hinzugefügt. Das klingt nach einem guten Fang!',
+                                 'Signal „%s“ ist an Bord. Willkommen im CAN-Team!'),
+                'message_added': ('Botschaft „%s“ hinzugefügt. Der CAN-Bus hat Post!',
+                                  'Neue Botschaft „%s“! Ich sortiere schon mal die Bits.'),
+                'database_loaded': ('Datenbasis geladen. Ich habe jedes Bit gezählt. Fast jedes.',),
+                'trace_loaded': ('Trace geladen. Zeitreise-Modus: bereit!',),
+                'panel_loaded': ('Panel geladen. Jetzt sieht die CAN-Welt schick aus!',),
+                'config_saved': ('Konfiguration gespeichert. Meine Arbeit hier ist für heute fast getan!',),
+                'config_new': ('Frische Konfiguration! Ein unbeschriebenes Bit-Abenteuer.',),
+                'plugin_started': ('Plugin „%s“ läuft. Ich drücke die Daumen aus sicherer Entfernung.',),
+                'record_started': ('Aufzeichnung läuft. Ich lausche den Bits!',),
+                'record_stopped': ('Aufzeichnung gestoppt. Die Bits dürfen kurz verschnaufen.',),
+                'play_started': ('Trace läuft. Ich reise mit Lichtgeschwindigkeit durch die Bits!',),
+                'play_stopped': ('Zeitreise pausiert. Mir war sowieso schon schwindelig.',),
+                'online': ('Online-Modus gestartet. Ohren auf: Die Bits funken!',),
+                'offline': ('Offline-Modus aktiviert. Zeit für eine kleine Bit-Pause.',),
+            }
+            choices = phrases.get(event)
+            if choices:
+                self.say(tr(random.choice(choices)) % args if args else tr(random.choice(choices)))
 
         def show(self):
             if self._native is not None:

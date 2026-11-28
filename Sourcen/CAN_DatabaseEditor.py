@@ -632,6 +632,7 @@ if tk is not None:
             self.on_new = None  # called with the path of a new empty DBC file (the analyser adds it)
             self.on_open = None  # called without arguments: the analyser opens its database window
             self.on_saved = None  # called with the paths of the saved files (the analyser reloads them)
+            self.on_action = None  # optional activity callback: (action, display name)
             self.bit_preview = None  # (signal index, start bit, length) while a signal is dragged
             self._bit_drag = None
             self._backed_up = set()
@@ -1628,10 +1629,13 @@ if tk is not None:
                 return
 
             def apply(values):
-                return self._edit(part, lambda source: source.add_message(
+                error = self._edit(part, lambda source: source.add_message(
                     {'id': values['id'], 'name': values['name'].strip(), 'length': values['length'].strip(),
                      'sender': values['sender'].strip(), 'description': values['description'].strip()}),
                     select=lambda identifier: ('m', part, identifier))
+                if error is None and self.on_action:
+                    self.on_action('message_added', values['name'].strip())
+                return error
             self._dialog(part, etr('New message'), self.message_form(identifier=self._free_id_text(part), name=''),
                          apply, etr('Add'))
 
@@ -1716,8 +1720,11 @@ if tk is not None:
                     fields = self.signal_fields_from(values)
                 except DbcEditError as error:
                     return str(error)
-                return self._edit(part, lambda source: source.add_signal(identifier, fields),
-                                  select=lambda name: ('s', part, identifier, name))
+                error = self._edit(part, lambda source: source.add_signal(identifier, fields),
+                                   select=lambda name: ('s', part, identifier, name))
+                if error is None and self.on_action:
+                    self.on_action('signal_added', fields['name'])
+                return error
             self._dialog(part, etr('New signal in %s') % message['name'], self.signal_form(message=message), apply, etr('Add'))
 
         def edit_signal(self, message_index, signal_index):
@@ -1748,7 +1755,10 @@ if tk is not None:
                     fields.update(name=values['name'].strip(), description=signal['description'],
                                   values=[(item['value'], item['name']) for item in signal['values']])
                     return source.add_signal(identifier, fields, after=signal['name'])
-                return self._edit(part, operation, select=lambda name: ('s', part, identifier, name))
+                error = self._edit(part, operation, select=lambda name: ('s', part, identifier, name))
+                if error is None and self.on_action:
+                    self.on_action('signal_added', values['name'].strip())
+                return error
             self._dialog(part, etr('Duplicate signal %s') % signal['name'],
                          [{'key': 'name', 'label': 'Name', 'value': signal['name'] + '_copy'}], apply, etr('Duplicate'))
 
