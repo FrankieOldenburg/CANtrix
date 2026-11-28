@@ -2477,11 +2477,15 @@ if tk is not None:
             self.schedule_plot()
 
         def visible_series(self):
+            return [series for _, series in self._visible_signals()]
+
+        def _visible_signals(self):
+            """(key, series) of the selected signals that have data, in the order of the lanes."""
             result = []
             for key in self.selected:
                 series = self.series(key)
                 if series is not None and series.xs:
-                    result.append(series)
+                    result.append((key, series))
             return result
 
         def fit_x(self):
@@ -2535,7 +2539,8 @@ if tk is not None:
             width, view_height = canvas.winfo_width(), canvas.winfo_height()
             if width < 50 or view_height < 20:
                 return
-            series_list = self.visible_series()
+            signals = self._visible_signals()
+            series_list = [series for _, series in signals]
             # for a copy all lanes have to fit into the visible area
             height = max(120, view_height, 0 if self._plot_fit else len(series_list) * 100)
             canvas.configure(scrollregion=(0, 0, width, height))
@@ -2670,7 +2675,9 @@ if tk is not None:
                                            font=self.font_label)
 
             self.plot_bounds = {'left': left, 'top': top, 'plot_width': plot_width, 'plot_height': plot_height,
-                                'x': (x0, x1), 'full_x': full_x, 'lanes': lanes, 'y_window': list(y_window)}
+                                'x': (x0, x1), 'full_x': full_x, 'lanes': lanes, 'y_window': list(y_window),
+                                'signals': [(key, series.message + '.' + series.name if series.message
+                                             else series.name) for key, series in signals]}
 
         @staticmethod
         def _draw_series(canvas, series, i0, i1, px, py, vy0, vy1, plot_width, color, x0, x1):
@@ -2792,17 +2799,25 @@ if tk is not None:
             self.schedule_plot()
 
         def on_plot_right_click(self, event):
-            """Right click (macOS also Control+click): menu to copy the graph or to set the 2nd cursor there."""
-            time = None
+            """Right click (macOS also Control+click): menu to remove the signal under the pointer, to copy the
+            graph or to set the 2nd cursor there."""
+            time = signal = None
             bounds = self.plot_bounds
             if bounds:
-                x = self.plot.canvasx(event.x)
+                x, y = self.plot.canvasx(event.x), self.plot.canvasy(event.y)
+                if bounds['top'] <= y <= bounds['top'] + bounds['plot_height']:
+                    signal = bounds['signals'][self.lane_at(y)]
                 if bounds['left'] <= x <= bounds['left'] + bounds['plot_width']:
                     x0, x1 = bounds['x']
                     time = x0 + (x - bounds['left']) / bounds['plot_width'] * (x1 - x0)
             if self.plot_menu is not None:
                 self.plot_menu.destroy()
             menu = self.plot_menu = tk.Menu(self.plot, tearoff=False)
+            if signal is not None:
+                key, name = signal
+                menu.add_command(label=tr('„%s“ aus der Grafik entfernen') % name,
+                                 command=lambda: self.set_signal_visibility(key, False))
+                menu.add_separator()
             menu.add_command(label=tr('Grafik in die Zwischenablage kopieren'),
                              state=tk.NORMAL if CAN_Clipboard.AVAILABLE and bounds else tk.DISABLED,
                              # the menu has to be gone before the picture is taken

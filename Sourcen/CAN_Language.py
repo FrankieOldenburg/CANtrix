@@ -928,6 +928,7 @@ EN = {
     '%s ersetzen?': 'Replace %s?',
     'Grafik in die Zwischenablage kopieren': 'Copy graph to clipboard',
     '2. Cursor hier setzen': 'Set 2nd cursor here',
+    '„%s“ aus der Grafik entfernen': 'Remove "%s" from the graph',
     'Grafik in die Zwischenablage kopiert': 'Graph copied to the clipboard',
     'Alle Umgebungsvariablen des Geräts anlegen': 'Create all environment variables of the device',
     'BLE-Datenbasis konnte nicht erstellt werden: %s': 'The BLE database could not be created: %s',
